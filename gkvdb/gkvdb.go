@@ -6,13 +6,10 @@
 // 数据结构要点   ：数据的分配长度cap >= 数据真实长度len，且 cap - len <= bucket，
 //               当数据存储内容发生改变时，依靠碎片管理器对碎片进行回收再利用，且碎片大小 >= bucket
 
-// 索引文件结构  ：元数据文件偏移量(36bit,64GB) 元数据文件列表项大小(20bit,1048575)
-// 元数据文件结构 :[键名哈希28(28bit) 键名长度(8bit) 键值长度(22bit,4MB) 数据文件偏移量(38bit,256GB)](变长,链表)
+// 索引文件结构  ：元数据文件偏移量(36bit,64GB) 元数据文件列表项大小(19bit,524287) 重复分区标志位(1bit)
+// 元数据文件结构 :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长,链表)
 // 数据文件结构  ：键名(变长) 键值(变长)
 
-// 数据项类型 :
-// 0: 元数据文件中的数据项键值放在第5项中，最大长度为5byte
-// 1: 元数据文件中的数据项键值放在数据文件中，第5项为数据文件中的索引位置
 
 package gkvdb
 
@@ -32,12 +29,13 @@ import (
 )
 
 const (
-    gPARTITION_SIZE          = 1497965                  // 哈希表分区大小(大小约为10MB)
-    //gPARTITION_SIZE          = 1
+    //gDEFAULT_DEGREE_SIZE     = 1497965                  // 默认阶数(哈希表分区大小)
+    gDEFAULT_DEGREE_SIZE     = 100000                   // 默认阶数(哈希表分区大小)
     gMAX_KEY_SIZE            = 0xFFFF                   // 键名最大长度(255byte)
     gMAX_VALUE_SIZE          = 0xFFFFFF >> 2            // 键值最大长度(4194303byte = 4MB)
-    gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小
-    gMETA_BUCKET_SIZE        = 12*5                     // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    gMAX_META_LIST_SIZE      = 524287*17                // 元数据列表最大大小(byte)
+    gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小(byte)
+    gMETA_BUCKET_SIZE        = 17*5                     // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 60000                    // gcache默认缓存时间(毫秒)
@@ -49,6 +47,8 @@ type DB struct {
     mu      sync.RWMutex
     path    string            // 数据文件存放目录路径
     name    string            // 数据文件名
+    degree  int               // 阶数(分区数)
+
     ixfp    *gfilepool.Pool   // 索引文件打开指针池(用以高并发下的IO复用)
     mtfp    *gfilepool.Pool   // 元数据文件打开指针池(元数据，包含索引信息和部分数据信息)
     dbfp    *gfilepool.Pool   // 数据文件打开指针池
@@ -58,34 +58,41 @@ type DB struct {
     cache   int32             // 是否开启缓存功能
 }
 
+// 索引项
+type Index struct {
+    start int64   // 索引开始位置
+    end   int64   // 索引结束位置
+}
+
+// 元数据项
+type Meta struct {
+    start  int64  // 开始位置
+    end    int64  // 结束位置
+    cap    uint   // 列表分配长度(byte)
+    size   uint   // 列表真实长度(byte)
+    buffer []byte // 数据项列表([]byte)
+    match  int    // 是否在查找中匹配结果(-2, -1, 0, 1)
+    index  int    // (匹配时有效, match=true)列表匹配的索引位置
+}
+
+// 数据项
+type Data struct {
+    start  int64  // 数据文件中的开始地址
+    end    int64  // 数据文件中的结束地址
+    cap    uint   // 数据允许存放的的最大长度（用以修改对比）
+    size   uint   // klen + vlen
+    klen   uint   // 键名大小
+    vlen   uint   // 键值大小(byte)
+}
+
 // KV数据检索记录
 type Record struct {
     hash64    uint    // 64位的hash code
-    hash28    uint    // 28位的hash code
-    part      int64   // 分区位置
+    mtstep    int     // 重复分区递增数
     key       []byte  // 键名
-    ix struct {
-        start int64   // 索引开始位置
-        end   int64   // 索引结束位置
-    }
-    mt struct {
-        start  int64  // 开始位置
-        end    int64  // 结束位置
-        cap    uint   // 列表分配长度(byte)
-        size   uint   // 列表真实长度(byte)
-        buffer []byte // 数据项列表([]byte)
-        match  int    // 是否在查找中匹配结果(-2, -1, 0, 1)
-        index  int    // (匹配时有效, match=true)列表匹配的索引位置
-
-    }
-    db struct {
-        start  int64  // 数据文件中的开始地址
-        end    int64  // 数据文件中的结束地址
-        cap    uint   // 数据允许存放的的最大长度（用以修改对比）
-        size   uint   // klen + vlen
-        klen   uint   // 键名大小
-        vlen   uint   // 键值大小(byte)
-    }
+    ix        Index
+    mt        Meta
+    db        Data
 }
 
 // 创建一个KV数据库
@@ -105,9 +112,10 @@ func New(path, name string) (*DB, error) {
         return nil, errors.New(path + " is not writable")
     }
     db := &DB {
-        path  : path,
-        name  : name,
-        cache : 1,
+        path   : path,
+        name   : name,
+        cache  : 1,
+        degree : gDEFAULT_DEGREE_SIZE,
     }
     db.memt = newMemTable(db)
 
@@ -186,40 +194,32 @@ func (db *DB) getHash64(key []byte) uint64 {
     return ghash.BKDRHash64(key)
 }
 
-// 计算关键字的hash code，使用32位不同于64位的哈希函数
-func (db *DB) getHash32(key []byte) uint32 {
-    return ghash.APHash(key)
-}
-
-// 计算关键字在索引文件中的偏移量
-func (db *DB) getPartitionByHash64(hash uint64) int64 {
-    return int64(hash%gPARTITION_SIZE)
-}
-
 // 获得索引信息
 func (db *DB) getIndexInfoByRecord(record *Record) error {
-    var buffer []byte
-    key            := "index_cache_" + strconv.Itoa(int(record.part))
-    record.ix.start = record.part*gINDEX_BUCKET_SIZE
-    record.ix.end   = record.ix.start + gINDEX_BUCKET_SIZE
-    if v := gcache.Get(key); v != nil {
-        buffer = v.([]byte)
-    } else {
-        pf, err := db.ixfp.File()
-        if err != nil {
-            return err
-        }
-        defer pf.Close()
-        buffer = gfile.GetBinContentByTwoOffsets(pf.File(), record.ix.start, record.ix.end)
-        gcache.Set(key, buffer, gCACHE_DEFAULT_TIMEOUT)
+    pf, err := db.ixfp.File()
+    if err != nil {
+        return err
     }
-    if buffer != nil {
-        bits           := gbinary.DecodeBytesToBits(buffer)
-        record.mt.start = int64(gbinary.DecodeBits(bits[0 : 36]))*gMETA_BUCKET_SIZE
-        record.mt.size  = uint(gbinary.DecodeBits(bits[36 : ]))*12
-        record.mt.cap   = db.getMetaCapBySize(record.mt.size)
-        record.mt.end   = record.mt.start + int64(record.mt.size)
-        return nil
+    defer pf.Close()
+
+    record.ix.start = int64(record.hash64%gDEFAULT_DEGREE_SIZE)*gINDEX_BUCKET_SIZE
+    record.ix.end   = record.ix.start + gINDEX_BUCKET_SIZE
+    for {
+        if buffer := gfile.GetBinContentByTwoOffsets(pf.File(), record.ix.start, record.ix.end); buffer != nil {
+            bits           := gbinary.DecodeBytesToBits(buffer)
+            rehashed       := uint(gbinary.DecodeBits(bits[55 : 56]))
+            if rehashed == 0 {
+                record.mt.start = int64(gbinary.DecodeBits(bits[0 : 36]))*gMETA_BUCKET_SIZE
+                record.mt.size  = uint(gbinary.DecodeBits(bits[36 : 55]))*17
+                record.mt.cap   = db.getMetaCapBySize(record.mt.size)
+                record.mt.end   = record.mt.start + int64(record.mt.size)
+            } else {
+                record.mtstep++
+                record.ix.start = int64(gbinary.DecodeBits(bits[0 : 36]))*gMETA_BUCKET_SIZE + int64(record.hash64%(gDEFAULT_DEGREE_SIZE + uint(record.mtstep)))*gINDEX_BUCKET_SIZE
+                record.ix.end   = record.ix.start + gINDEX_BUCKET_SIZE
+            }
+            return nil
+        }
     }
     return nil
 }
@@ -236,7 +236,7 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
     if record.mt.buffer != nil {
         // 二分查找
         min := 0
-        max := len(record.mt.buffer)/12 - 1
+        max := len(record.mt.buffer)/17 - 1
         mid := 0
         cmp := -2
         for {
@@ -245,13 +245,13 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
             }
             for {
                 mid     = int((min + max) / 2)
-                buffer := record.mt.buffer[mid*12 : mid*12 + 12]
+                buffer := record.mt.buffer[mid*17 : mid*17 + 17]
                 bits   := gbinary.DecodeBytesToBits(buffer)
-                hash28 := gbinary.DecodeBits(bits[0 : 28])
-                if record.hash28 < hash28 {
+                hash64 := gbinary.DecodeBits(bits[0 : 64])
+                if record.hash64 < hash64 {
                     max = mid - 1
                     cmp = -1
-                } else if record.hash28 > hash28 {
+                } else if record.hash64 > hash64 {
                     min = mid + 1
                     cmp = 1
                 } else {
@@ -269,7 +269,7 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
                 }
             }
         }
-        record.mt.index = mid*12
+        record.mt.index = mid*17
         record.mt.match = cmp
     }
     return nil
@@ -277,13 +277,8 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
 
 // 查询检索信息
 func (db *DB) getRecordByKey(key []byte) (*Record, error) {
-    hash64 := db.getHash64(key)
-    hash32 := db.getHash32(key)
-    part   := db.getPartitionByHash64(hash64)
     record := &Record {
-        hash64  : uint(hash64),
-        hash28  : uint(hash32 & 0xFFFFFFF),
-        part    : part,
+        hash64  : uint(db.getHash64(key)),
         key     : key,
     }
     record.mt.match = -2
@@ -413,15 +408,31 @@ func (db *DB) insertDataByRecord(key []byte, value []byte, record *Record) error
     record.db.vlen = uint(len(value))
     record.db.size = record.db.klen + record.db.vlen
 
+    // 保存旧记录，用以判断索引更新
+    oldr := *record
+
     // 写入数据文件
     if err := db.insertDataIntoDb(key, value, record); err != nil {
         return err
     }
 
-    // 写入元数据
-    if err := db.insertDataIntoMt(key, value, record); err != nil {
-        return err
+    // 判断是否需要重复分区
+    if record.mt.match != 0 && record.mt.size == gMAX_META_LIST_SIZE {
+
+    } else {
+        // 写入元数据
+        if err := db.insertDataIntoMt(key, value, record); err != nil {
+            return err
+        }
+
+        // 根据record信息更新索引文件
+        if oldr.mt.start != record.mt.start || oldr.mt.size != record.mt.size {
+            if err := db.updateIndexByRecord(record); err != nil {
+                return errors.New("creating index error: " + err.Error())
+            }
+        }
     }
+
     return nil
 }
 
@@ -493,7 +504,7 @@ func (db *DB) saveMeta(slice []byte, buffer []byte, index int, cmp int) []byte {
         // 添加到前面
     } else {
         // 添加到后面
-        pos = index + 12
+        pos = index + 17
         if pos >= len(slice) {
             pos = len(slice)
         }
@@ -507,9 +518,8 @@ func (db *DB) saveMeta(slice []byte, buffer []byte, index int, cmp int) []byte {
 
 // 删除一项
 func (db *DB) removeMeta(slice []byte, index int) []byte {
-    return append(slice[ : index], slice[index + 12 : ]...)
+    return append(slice[ : index], slice[index + 17 : ]...)
 }
-
 
 // 将数据写入到元数据文件中，并更新信息到record
 func (db *DB) insertDataIntoMt(key []byte, value []byte, record *Record) error {
@@ -521,10 +531,10 @@ func (db *DB) insertDataIntoMt(key []byte, value []byte, record *Record) error {
 
     // 二进制打包
     bits := make([]gbinary.Bit, 0)
-    bits  = gbinary.EncodeBits(bits, record.hash28,   28)
+    bits  = gbinary.EncodeBits(bits, record.hash64,   64)
     bits  = gbinary.EncodeBits(bits, record.db.klen,  8)
-    bits  = gbinary.EncodeBits(bits, record.db.vlen,  22)
-    bits  = gbinary.EncodeBits(bits, uint(record.db.start/gDATA_BUCKET_SIZE), 38)
+    bits  = gbinary.EncodeBits(bits, record.db.vlen,  24)
+    bits  = gbinary.EncodeBits(bits, uint(record.db.start/gDATA_BUCKET_SIZE), 40)
     // 数据列表打包(判断位置进行覆盖或者插入)
     record.mt.buffer = db.saveMeta(record.mt.buffer, gbinary.EncodeBitsToBytes(bits), record.mt.index, record.mt.match)
     record.mt.size   = uint(len(record.mt.buffer))
@@ -565,17 +575,17 @@ func (db *DB) insertDataIntoMt(key []byte, value []byte, record *Record) error {
     for i := 0; i < int(record.mt.cap - record.mt.size); i++ {
         record.mt.buffer = append(record.mt.buffer, byte(0))
     }
+
     if _, err = pf.File().WriteAt(record.mt.buffer, record.mt.start); err != nil {
         return err
     }
     db.checkAndResizeMtCap(record)
+
     return nil
 }
 
 // 根据record更新索引信息
 func (db *DB) updateIndexByRecord(record *Record) error {
-    defer gcache.Remove("index_cache_" + strconv.Itoa(int(record.part)))
-
     ixpf, err := db.ixfp.File()
     if err != nil {
         return err
@@ -586,7 +596,7 @@ func (db *DB) updateIndexByRecord(record *Record) error {
     if record.mt.size > 0 {
         // 添加/修改/部分删除
         bits = gbinary.EncodeBits(bits, uint(record.mt.start/gMETA_BUCKET_SIZE),   36)
-        bits = gbinary.EncodeBits(bits, record.mt.size/12,                         20)
+        bits = gbinary.EncodeBits(bits, record.mt.size/17,                         20)
     } else {
         // 数据全部删除完
         bits = make([]gbinary.Bit, gINDEX_BUCKET_SIZE)

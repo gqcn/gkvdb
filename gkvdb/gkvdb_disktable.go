@@ -33,19 +33,11 @@ func (db *DB) set(key []byte, value []byte) error {
         return err
     }
 
-    oldr := *record
-
     // 写入数据文件，并更新record信息
     if err := db.insertDataByRecord(key, value, record); err != nil {
         return errors.New("inserting data error: " + err.Error())
     }
 
-    // 根据record信息更新索引文件
-    if oldr.mt.start != record.mt.start || oldr.mt.size != record.mt.size {
-        if err := db.updateIndexByRecord(record); err != nil {
-            return errors.New("creating index error: " + err.Error())
-        }
-    }
     return nil
 }
 
