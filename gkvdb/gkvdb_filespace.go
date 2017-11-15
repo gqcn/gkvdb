@@ -32,9 +32,29 @@ func (db *DB) addMtFileSpace(index int, size uint) {
 
 }
 
-func (db *DB) getMtFileSpace(size uint) (int, uint) {
+func (db *DB) getMtFileSpace(size uint) int64 {
     defer db.setFileSpaceDirty(true)
-    return db.mtsp.GetBlock(size)
+    i, s := db.mtsp.GetBlock(size)
+    if i >= 0 {
+        extra := int(s - size)
+        if extra > 0 {
+            db.addMtFileSpace(i + int(size), uint(extra))
+        }
+        return int64(i)
+    } else {
+        pf, err := db.mtfp.File()
+        if err != nil {
+            return -1
+        }
+        defer pf.Close()
+
+        start, err := pf.File().Seek(0, 2)
+        if err != nil {
+            return -1
+        }
+        return start
+    }
+    return -1
 }
 
 // 数据碎片
@@ -43,9 +63,29 @@ func (db *DB) addDbFileSpace(index int, size uint) {
     db.dbsp.AddBlock(index, size)
 }
 
-func (db *DB) getDbFileSpace(size uint) (int, uint) {
+func (db *DB) getDbFileSpace(size uint) int64 {
     defer db.setFileSpaceDirty(true)
-    return db.dbsp.GetBlock(size)
+    i, s := db.dbsp.GetBlock(size)
+    if i >= 0 {
+        extra := int(s - size)
+        if extra > 0 {
+            db.addDbFileSpace(i + int(size), uint(extra))
+        }
+        return int64(i)
+    } else {
+        pf, err := db.dbfp.File()
+        if err != nil {
+            return -1
+        }
+        defer pf.Close()
+
+        start, err := pf.File().Seek(0, 2)
+        if err != nil {
+            return -1
+        }
+        return start
+    }
+    return -1
 }
 
 // 保存碎片数据到文件
