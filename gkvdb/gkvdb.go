@@ -4,7 +4,7 @@
 // 数据结构要点   ：数据的分配长度cap >= 数据真实长度len，且 cap - len <= bucket，
 //               当数据存储内容发生改变时，依靠碎片管理器对碎片进行回收再利用，且碎片大小 >= bucket
 
-// 索引文件结构  ：元数据文件偏移量(36bit,64GB) 元数据文件列表项大小(19bit,524287) 重复分区标志位(1bit)
+// 索引文件结构  ：元数据文件偏移量倍数(36bit,64GB*元数据桶大小)|下一层级索引的文件偏移量(重复分区标志位=1时有效) 元数据文件列表项大小(19bit,524287) 重复分区标志位(1bit)
 // 元数据文件结构 :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长,链表)
 // 数据文件结构  ：键名(变长) 键值(变长)
 
@@ -25,10 +25,12 @@ import (
 )
 
 const (
-    gDEFAULT_PART_SIZE       = 100000                   // 默认哈希表分区大小
+    //gDEFAULT_PART_SIZE       = 100000                   // 默认哈希表分区大小
+    gDEFAULT_PART_SIZE       = 1                   // 默认哈希表分区大小
     gMAX_KEY_SIZE            = 0xFF                     // 键名最大长度(255byte)
     gMAX_VALUE_SIZE          = 0xFFFFFF                 // 键值最大长度(16MB)
-    gMAX_META_LIST_SIZE      = 100000*17                // 阶数，元数据列表最大大小(byte)
+    //gMAX_META_LIST_SIZE      = 100000*17                // 阶数，元数据列表最大大小(byte)
+    gMAX_META_LIST_SIZE      = 2*17                // 阶数，元数据列表最大大小(byte)
     gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小(byte)
     gMETA_BUCKET_SIZE        = 17*5                     // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
@@ -63,8 +65,8 @@ type Index struct {
 type Meta struct {
     start  int64  // 开始位置
     end    int64  // 结束位置
-    cap    uint   // 列表分配长度(byte)
-    size   uint   // 列表真实长度(byte)
+    cap    int    // 列表分配长度(byte)
+    size   int    // 列表真实长度(byte)
     buffer []byte // 数据项列表([]byte)
     match  int    // 是否在查找中匹配结果(-2, -1, 0, 1)
     index  int    // (匹配时有效, match=true)列表匹配的索引位置
@@ -74,10 +76,10 @@ type Meta struct {
 type Data struct {
     start  int64  // 数据文件中的开始地址
     end    int64  // 数据文件中的结束地址
-    cap    uint   // 数据允许存放的的最大长度（用以修改对比）
-    size   uint   // klen + vlen
-    klen   uint   // 键名大小
-    vlen   uint   // 键值大小(byte)
+    cap    int   // 数据允许存放的的最大长度（用以修改对比）
+    size   int   // klen + vlen
+    klen   int   // 键名大小
+    vlen   int   // 键值大小(byte)
 }
 
 // KV数据检索记录
@@ -171,7 +173,7 @@ func (db *DB) setCache(v int32) {
 }
 
 // 根据元数据的size计算cap
-func (db *DB) getMetaCapBySize(size uint) uint {
+func (db *DB) getMetaCapBySize(size int) int {
     if size > 0 && size%gMETA_BUCKET_SIZE != 0 {
         return size + gMETA_BUCKET_SIZE - size%gMETA_BUCKET_SIZE
     }
@@ -179,7 +181,7 @@ func (db *DB) getMetaCapBySize(size uint) uint {
 }
 
 // 根据数据的size计算cap
-func (db *DB) getDataCapBySize(size uint) uint {
+func (db *DB) getDataCapBySize(size int) int {
     if size > 0 && size%gDATA_BUCKET_SIZE != 0 {
         return size + gDATA_BUCKET_SIZE - size%gDATA_BUCKET_SIZE
     }
@@ -199,22 +201,22 @@ func (db *DB) getIndexInfoByRecord(record *Record) error {
     }
     defer pf.Close()
 
-    record.index.start = int64(record.hash64%gDEFAULT_PART_SIZE)*gINDEX_BUCKET_SIZE
+    record.index.start = int64(record.hash64%gDEFAULT_PART_SIZE)
     record.index.end   = record.index.start + gINDEX_BUCKET_SIZE
     for {
         if buffer := gfile.GetBinContentByTwoOffsets(pf.File(), record.index.start, record.index.end); buffer != nil {
             bits     := gbinary.DecodeBytesToBits(buffer)
-            start    := int64(gbinary.DecodeBits(bits[0 : 36]))*gMETA_BUCKET_SIZE
+            start    := int64(gbinary.DecodeBits(bits[0 : 36]))
             rehashed := uint(gbinary.DecodeBits(bits[55 : 56]))
             if rehashed == 0 {
-                record.meta.start = start
-                record.meta.size  = uint(gbinary.DecodeBits(bits[36 : 55]))*17
+                record.meta.start = start*gMETA_BUCKET_SIZE
+                record.meta.size  = int(gbinary.DecodeBits(bits[36 : 55]))*17
                 record.meta.cap   = db.getMetaCapBySize(record.meta.size)
                 record.meta.end   = record.meta.start + int64(record.meta.size)
                 break
             } else {
                 record.index.deep++
-                record.index.start = start + int64(record.hash64%(gDEFAULT_PART_SIZE + uint(record.index.deep)))*gINDEX_BUCKET_SIZE
+                record.index.start = start + int64(record.hash64%(gDEFAULT_PART_SIZE + uint(record.index.deep)))*7
                 record.index.end   = record.index.start + gINDEX_BUCKET_SIZE
             }
         }
@@ -253,11 +255,11 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
                     cmp = 1
                 } else {
                     cmp = 0
-                    record.data.klen   = gbinary.DecodeBits(bits[28 : 36])
-                    record.data.vlen   = gbinary.DecodeBits(bits[36 : 58])
+                    record.data.klen   = int(gbinary.DecodeBits(bits[64 : 72]))
+                    record.data.vlen   = int(gbinary.DecodeBits(bits[72 : 96]))
                     record.data.size   = record.data.klen + record.data.vlen
                     record.data.cap    = db.getDataCapBySize(record.data.size)
-                    record.data.start  = int64(gbinary.DecodeBits(bits[58 : 96]))*gDATA_BUCKET_SIZE
+                    record.data.start  = int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
                     record.data.end    = record.data.start + int64(record.data.size)
                     break
                 }
@@ -356,7 +358,7 @@ func (db *DB) removeDataFromMt(record *Record) error {
     defer pf.Close()
 
     record.meta.buffer = db.removeMeta(record.meta.buffer, record.meta.index)
-    record.meta.size   = uint(len(record.meta.buffer))
+    record.meta.size   = len(record.meta.buffer)
     if record.meta.size == 0 {
         // 如果列表被清空，那么添加整块空间到碎片管理器
         db.addMtFileSpace(int(record.meta.start), record.meta.cap)
@@ -379,10 +381,10 @@ func (db *DB) removeDataFromIx(record *Record) error {
 func (db *DB) checkAndResizeMtCap(record *Record) {
     if int(record.meta.cap - record.meta.size) >= gMETA_BUCKET_SIZE {
         realcap := db.getMetaCapBySize(record.meta.size)
-        diffcap := int(record.meta.cap - realcap)
+        diffcap := record.meta.cap - realcap
         if diffcap >= gMETA_BUCKET_SIZE {
             record.meta.cap = realcap
-            db.addMtFileSpace(int(record.meta.start)+int(realcap), uint(diffcap))
+            db.addMtFileSpace(int(record.meta.start)+int(realcap), diffcap)
         }
     }
 }
@@ -391,18 +393,18 @@ func (db *DB) checkAndResizeMtCap(record *Record) {
 func (db *DB) checkAndResizeDbCap(record *Record) {
     if int(record.data.cap - record.data.size) >= gDATA_BUCKET_SIZE {
         realcap := db.getDataCapBySize(record.data.size)
-        diffcap := int(record.data.cap - realcap)
+        diffcap := record.data.cap - realcap
         if diffcap >= gDATA_BUCKET_SIZE {
             record.data.cap = realcap
-            db.addDbFileSpace(int(record.data.start)+int(realcap), uint(diffcap))
+            db.addDbFileSpace(int(record.data.start)+int(realcap), diffcap)
         }
     }
 }
 
 // 插入一条KV数据
 func (db *DB) insertDataByRecord(key []byte, value []byte, record *Record) error {
-    record.data.klen = uint(len(key))
-    record.data.vlen = uint(len(value))
+    record.data.klen = len(key)
+    record.data.vlen = len(value)
     record.data.size = record.data.klen + record.data.vlen
 
     // 保存旧记录，用以判断索引更新
@@ -426,9 +428,7 @@ func (db *DB) insertDataByRecord(key []byte, value []byte, record *Record) error
     }
 
     // 判断是否需要重复分区
-    if record.meta.size == gMAX_META_LIST_SIZE {
-        db.checkRehash(record)
-    }
+    db.checkRehash(record)
     return nil
 }
 
@@ -510,17 +510,17 @@ func (db *DB) insertDataIntoMt(key []byte, value []byte, record *Record) error {
 
     // 二进制打包
     bits := make([]gbinary.Bit, 0)
-    bits  = gbinary.EncodeBits(bits, record.hash64,   64)
-    bits  = gbinary.EncodeBits(bits, record.data.klen,  8)
-    bits  = gbinary.EncodeBits(bits, record.data.vlen,  24)
+    bits  = gbinary.EncodeBits(bits, record.hash64,           64)
+    bits  = gbinary.EncodeBits(bits, uint(record.data.klen),   8)
+    bits  = gbinary.EncodeBits(bits, uint(record.data.vlen),  24)
     bits  = gbinary.EncodeBits(bits, uint(record.data.start/gDATA_BUCKET_SIZE), 40)
     // 数据列表打包(判断位置进行覆盖或者插入)
     record.meta.buffer = db.saveMeta(record.meta.buffer, gbinary.EncodeBitsToBytes(bits), record.meta.index, record.meta.match)
-    record.meta.size   = uint(len(record.meta.buffer))
+    record.meta.size   = len(record.meta.buffer)
     if record.meta.end <= 0 || record.meta.cap < record.meta.size {
         // 不用的空间添加到碎片管理器
         if record.meta.end > 0 && record.meta.cap > 0 {
-            db.addMtFileSpace(int(record.meta.start), uint(record.meta.cap))
+            db.addMtFileSpace(int(record.meta.start), record.meta.cap)
         }
         // 重新计算所需空间
         if record.meta.cap < record.meta.size {
@@ -535,11 +535,12 @@ func (db *DB) insertDataIntoMt(key []byte, value []byte, record *Record) error {
         record.meta.end   = record.meta.start + int64(record.meta.cap)
     }
     // size不够cap的对末尾进行补0占位(便于文件末尾分配空间)
+    buffer := record.meta.buffer
     for i := 0; i < int(record.meta.cap - record.meta.size); i++ {
-        record.meta.buffer = append(record.meta.buffer, byte(0))
+        buffer = append(buffer, byte(0))
     }
 
-    if _, err = pf.File().WriteAt(record.meta.buffer, record.meta.start); err != nil {
+    if _, err = pf.File().WriteAt(buffer, record.meta.start); err != nil {
         return err
     }
     db.checkAndResizeMtCap(record)
@@ -559,7 +560,7 @@ func (db *DB) updateIndexByRecord(record *Record) error {
     if record.meta.size > 0 {
         // 添加/修改/部分删除
         bits = gbinary.EncodeBits(bits, uint(record.meta.start/gMETA_BUCKET_SIZE),   36)
-        bits = gbinary.EncodeBits(bits, record.meta.size/17,                         19)
+        bits = gbinary.EncodeBits(bits, uint(record.meta.size/17),                   19)
         bits = gbinary.EncodeBits(bits, 0,                                            1)
     } else {
         // 数据全部删除完

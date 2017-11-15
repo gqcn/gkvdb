@@ -24,21 +24,20 @@ func (db *DB) isFileSpaceDirty() bool {
     return false
 }
 
-
 // 元数据碎片
-func (db *DB) addMtFileSpace(index int, size uint) {
+func (db *DB) addMtFileSpace(index int, size int) {
     defer db.setFileSpaceDirty(true)
     db.mtsp.AddBlock(index, size)
 
 }
 
-func (db *DB) getMtFileSpace(size uint) int64 {
+func (db *DB) getMtFileSpace(size int) int64 {
     defer db.setFileSpaceDirty(true)
     i, s := db.mtsp.GetBlock(size)
     if i >= 0 {
         extra := int(s - size)
         if extra > 0 {
-            db.addMtFileSpace(i + int(size), uint(extra))
+            db.addMtFileSpace(i + int(size), extra)
         }
         return int64(i)
     } else {
@@ -58,18 +57,18 @@ func (db *DB) getMtFileSpace(size uint) int64 {
 }
 
 // 数据碎片
-func (db *DB) addDbFileSpace(index int, size uint) {
+func (db *DB) addDbFileSpace(index int, size int) {
     defer db.setFileSpaceDirty(true)
     db.dbsp.AddBlock(index, size)
 }
 
-func (db *DB) getDbFileSpace(size uint) int64 {
+func (db *DB) getDbFileSpace(size int) int64 {
     defer db.setFileSpaceDirty(true)
     i, s := db.dbsp.GetBlock(size)
     if i >= 0 {
-        extra := int(s - size)
+        extra := s - size
         if extra > 0 {
-            db.addDbFileSpace(i + int(size), uint(extra))
+            db.addDbFileSpace(i + int(size), extra)
         }
         return int64(i)
     } else {

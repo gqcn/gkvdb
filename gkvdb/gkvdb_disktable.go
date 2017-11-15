@@ -55,7 +55,7 @@ func (db *DB) remove(key []byte) error {
         return err
     }
     // 如果找到匹配才执行删除操作
-    if record.mt.match == 0 {
+    if record.meta.match == 0 {
         return db.removeDataByRecord(record)
     }
     return nil

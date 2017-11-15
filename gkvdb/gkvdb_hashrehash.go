@@ -1,45 +1,55 @@
 package gkvdb
 
-import "g/encoding/gbinary"
+import (
+    "g/encoding/gbinary"
+    "fmt"
+)
 
 // 对数据库对应元数据列表进行重复分区
 func (db *DB) checkRehash(record *Record) error {
+    if record.meta.size < gMAX_META_LIST_SIZE {
+        return nil
+    }
+    fmt.Println("need rehash for:", record)
     // 将旧空间添加进碎片管理
     db.addMtFileSpace(int(record.meta.start), record.meta.cap)
 
-    m := make(map[uint][]byte)
-    p := uint(gDEFAULT_PART_SIZE + record.index.deep + 1)
+    m := make(map[int][]byte)
+    p := gDEFAULT_PART_SIZE + record.index.deep + 1
     // 遍历元数据列表
-    for i := uint(0); i < record.meta.size; i += 17 {
+    for i := 0; i < record.meta.size; i += 17 {
         buffer := record.meta.buffer[i : i + 17]
         bits   := gbinary.DecodeBytesToBits(buffer)
         hash64 := gbinary.DecodeBits(bits[0 : 64])
-        part   := hash64%gDEFAULT_PART_SIZE
+        part   := int(hash64%uint(p))
         if _, ok := m[part]; !ok {
             m[part] = make([]byte, 0)
         }
         m[part] = append(m[part], buffer...)
     }
-    // 生成写入元数据
-    mtcap    := uint(0)
-    mtbuffer := make([]byte, 0)
+    // 计算元数据大小以便分配空间
+    mtsize := 0
     for _, v := range m {
-        mtcap   += db.getMetaCapBySize(uint(len(v)))
-        mtbuffer = append(mtbuffer, v...)
+        mtsize += db.getMetaCapBySize(len(v))
     }
-
-    // 生成写入索引数据
-    mtstart  := db.getMtFileSpace(mtcap)
+    // 生成写入的索引数据及元数据
+    mtstart  := db.getMtFileSpace(mtsize)
+    mtbuffer := make([]byte, 0)
     ixbuffer := make([]byte, 0)
-    for i := uint(0); i < p; i ++ {
-        part := i*7
+    for i := 0; i < p; i ++ {
+        part := i
         if v, ok := m[part]; ok {
             bits    := make([]gbinary.Bit, 0)
             bits     = gbinary.EncodeBits(bits, uint(mtstart)/gMETA_BUCKET_SIZE,   36)
             bits     = gbinary.EncodeBits(bits, uint(len(v))/17,                   19)
             bits     = gbinary.EncodeBits(bits, 0,                                  1)
-            mtstart += int64(db.getMetaCapBySize(uint(len(v))))
+            mtcap   := db.getMetaCapBySize(len(v))
+            mtstart += int64(mtcap)
             ixbuffer = append(ixbuffer, gbinary.EncodeBitsToBytes(bits)...)
+            mtbuffer = append(mtbuffer, v...)
+            for j := 0; j < int(mtcap) - len(v); j++ {
+                mtbuffer = append(mtbuffer, byte(0))
+            }
         } else {
             ixbuffer = append(ixbuffer, make([]byte, 7)...)
         }
