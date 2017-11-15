@@ -25,12 +25,12 @@ import (
 )
 
 const (
-    //gDEFAULT_PART_SIZE       = 100000                   // 默认哈希表分区大小
-    gDEFAULT_PART_SIZE       = 1                   // 默认哈希表分区大小
+    gDEFAULT_PART_SIZE       = 100000                   // 默认哈希表分区大小
+    //gDEFAULT_PART_SIZE       = 1                   // 默认哈希表分区大小
     gMAX_KEY_SIZE            = 0xFF                     // 键名最大长度(255byte)
     gMAX_VALUE_SIZE          = 0xFFFFFF                 // 键值最大长度(16MB)
-    //gMAX_META_LIST_SIZE      = 100000*17                // 阶数，元数据列表最大大小(byte)
-    gMAX_META_LIST_SIZE      = 2*17                // 阶数，元数据列表最大大小(byte)
+    gMAX_META_LIST_SIZE      = 100000*17                // 阶数，元数据列表最大大小(byte)
+    //gMAX_META_LIST_SIZE      = 2*17                // 阶数，元数据列表最大大小(byte)
     gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小(byte)
     gMETA_BUCKET_SIZE        = 17*5                     // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
@@ -201,7 +201,7 @@ func (db *DB) getIndexInfoByRecord(record *Record) error {
     }
     defer pf.Close()
 
-    record.index.start = int64(record.hash64%gDEFAULT_PART_SIZE)
+    record.index.start = int64(record.hash64%gDEFAULT_PART_SIZE)*7
     record.index.end   = record.index.start + gINDEX_BUCKET_SIZE
     for {
         if buffer := gfile.GetBinContentByTwoOffsets(pf.File(), record.index.start, record.index.end); buffer != nil {
@@ -231,7 +231,7 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
         return err
     }
     defer pf.Close()
-
+    //fmt.Println("meta start:", record.meta.start, gfile.GetBinContentByTwoOffsets(pf.File(), record.meta.start, record.meta.end))
     if record.meta.buffer = gfile.GetBinContentByTwoOffsets(pf.File(), record.meta.start, record.meta.end); record.meta.buffer != nil {
         // 二分查找
         min := 0
@@ -534,6 +534,9 @@ func (db *DB) insertDataIntoMt(key []byte, value []byte, record *Record) error {
         record.meta.start = db.getMtFileSpace(record.meta.cap)
         record.meta.end   = record.meta.start + int64(record.meta.cap)
     }
+
+    //fmt.Println("meta write:", record.meta.start, record.meta.buffer)
+
     // size不够cap的对末尾进行补0占位(便于文件末尾分配空间)
     buffer := record.meta.buffer
     for i := 0; i < int(record.meta.cap - record.meta.size); i++ {

@@ -34,19 +34,20 @@ func (db *DB) checkRehash(record *Record) error {
     }
     // 生成写入的索引数据及元数据
     mtstart  := db.getMtFileSpace(mtsize)
+    tmpstart := mtstart
     mtbuffer := make([]byte, 0)
     ixbuffer := make([]byte, 0)
     for i := 0; i < p; i ++ {
         part := i
         if v, ok := m[part]; ok {
-            bits    := make([]gbinary.Bit, 0)
-            bits     = gbinary.EncodeBits(bits, uint(mtstart)/gMETA_BUCKET_SIZE,   36)
-            bits     = gbinary.EncodeBits(bits, uint(len(v))/17,                   19)
-            bits     = gbinary.EncodeBits(bits, 0,                                  1)
-            mtcap   := db.getMetaCapBySize(len(v))
-            mtstart += int64(mtcap)
-            ixbuffer = append(ixbuffer, gbinary.EncodeBitsToBytes(bits)...)
-            mtbuffer = append(mtbuffer, v...)
+            bits     := make([]gbinary.Bit, 0)
+            bits      = gbinary.EncodeBits(bits, uint(tmpstart)/gMETA_BUCKET_SIZE,   36)
+            bits      = gbinary.EncodeBits(bits, uint(len(v))/17,                   19)
+            bits      = gbinary.EncodeBits(bits, 0,                                  1)
+            mtcap    := db.getMetaCapBySize(len(v))
+            tmpstart += int64(mtcap)
+            ixbuffer  = append(ixbuffer, gbinary.EncodeBitsToBytes(bits)...)
+            mtbuffer  = append(mtbuffer, v...)
             for j := 0; j < int(mtcap) - len(v); j++ {
                 mtbuffer = append(mtbuffer, byte(0))
             }
@@ -76,6 +77,7 @@ func (db *DB) checkRehash(record *Record) error {
         return err
     }
     ixpf.File().WriteAt(ixbuffer, ixstart)
+
     // 修改老的索引信息
     bits    := make([]gbinary.Bit, 0)
     bits     = gbinary.EncodeBits(bits, uint(ixstart), 36)
@@ -84,5 +86,6 @@ func (db *DB) checkRehash(record *Record) error {
     if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
         return err
     }
+
     return nil
 }
