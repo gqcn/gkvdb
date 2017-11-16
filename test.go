@@ -5,72 +5,134 @@ import (
     "g/util/gtime"
     "./gkvdb"
     "strconv"
+    "time"
 )
 
-func main() {
-    t1 := gtime.Microsecond()
-    db, err := gkvdb.New("/tmp/test.db", "my")
-    if err != nil {
-        fmt.Println(err)
-    }
-    fmt.Println(gtime.Microsecond() - t1)
-    db.SetCache(false)
+var db *gkvdb.DB
 
-    t2 := gtime.Microsecond()
-    //db.Set([]byte{byte(1)}, []byte("1"))
-    //db.Set([]byte{byte(1)}, []byte("123456"))
-    //db.Set([]byte{byte(1)}, []byte("1"))
-    //db.Set([]byte{byte(1)}, []byte("1234567890"))
-    //fmt.Println(db.Get([]byte{byte(1)}))
-    //fmt.Println(db.Get([]byte{byte(1)}))
-    //fmt.Println(db.Set([]byte("name"), []byte("john")))
-    //fmt.Println(db.Set([]byte("name2"), []byte("john2")))
-    //fmt.Println(db.Get([]byte("name")))
-    //fmt.Println(db.Get([]byte("name2")))
-    size := 10
-    //gtime.SetInterval(2*time.Second, func() bool {
-    //    db.PrintState()
-    //    //fmt.Println(db.GetBlocks())
-    //    return true
-    //})
-    //db.Set([]byte{byte(2)}, []byte{byte(2)})
-    //db.Set([]byte{byte(1)}, []byte{byte(1)})
-    ////db.Set([]byte{byte(0)}, []byte{byte(0)})
-    //////
-    for i := 0; i < size; i++ {
-        //r := []byte(grand.RandStr(10))
-        //if err := db.Set(r, r); err != nil {
-        if err := db.Set([]byte("key_" + strconv.Itoa(i)), []byte("value_" + strconv.Itoa(i))); err != nil {
-        //if err := db.Set(gbinary.EncodeInt32(int32(i)), gbinary.EncodeInt32(int32(i))); err != nil {
+func init() {
+    r, _ := gkvdb.New("/tmp/gkvdb", "test")
+    db = r
+}
+
+// 测试默认带缓存情况下的数据库写入
+func TestSetWithCache(count int) {
+    t := gtime.Microsecond()
+    for i := 0; i < count; i++ {
+        key   := []byte("key_" + strconv.Itoa(i))
+        value := []byte("value_" + strconv.Itoa(i))
+        if err := db.Set(key, value); err != nil {
             fmt.Println(err)
         }
     }
-    for i := 0; i < size; i++ {
-        r := db.Get([]byte("key_" + strconv.Itoa(i)))
-        //r := db.Get(gbinary.EncodeInt32(int32(i)))
-        if r == nil {
-            fmt.Println("none for ", i)
+    fmt.Println("TestSetWithCache:", gtime.Microsecond() - t)
+}
+
+// 测试默认带缓存情况下的数据库查询
+func TestGetWithCache(count int) {
+    t := gtime.Microsecond()
+    for i := 0; i < count; i++ {
+        key := []byte("key_" + strconv.Itoa(i))
+        if r := db.Get(key); r == nil {
+            fmt.Println("TestGetWithCache value not found for index:", i)
         }
     }
-    fmt.Println(db.Keys(-1))
-    db.Remove([]byte("key_" + strconv.Itoa(1)))
-    fmt.Println(db.Keys(-1))
-    //fmt.Println(db.Values(-1))
-    //db.Remove(true)
-    //db.Get([]byte("key1_" + strconv.Itoa(99999)))
-    //fmt.Println(string(db.Get([]byte("key1_" + strconv.Itoa(99999)))))
-    //fmt.Println(gbinary.DecodeToInt32(db.Get(gbinary.EncodeInt32(4253318))))
+    fmt.Println("TestGetWithCache:", gtime.Microsecond() - t)
+}
 
-    //blocks  := db.GetBlocks()
-    //fmt.Println(blocks)
-    //content := make([]byte, 0)
-    //for _, b := range blocks {
-    //    content = append(content, gbinary.EncodeInt64(int64(b.Index()))...)
-    //    content = append(content, gbinary.EncodeUint32(uint32(b.Size()))...)
-    //}
-    //gfile.PutBinContents("/tmp/blocks", content)
-    fmt.Println(gtime.Microsecond() - t2)
-    //select {
+// 测试默认带缓存情况下的数据库删除
+func TestRemoveWithCache(count int) {
+    t := gtime.Microsecond()
+    for i := 0; i < count; i++ {
+        key := []byte("key_" + strconv.Itoa(i))
+        if err := db.Remove(key); err != nil {
+            fmt.Println(err)
+        }
+    }
+    fmt.Println("TestRemoveWithCache:", gtime.Microsecond() - t)
+}
+
+
+
+// 测试不带缓存情况下的数据库写入
+func TestSetWithoutCache(count int) {
+    db.SetCache(false)
+    t := gtime.Microsecond()
+    for i := 0; i < count; i++ {
+        key   := []byte("key_" + strconv.Itoa(i))
+        value := []byte("value_" + strconv.Itoa(i))
+        if err := db.Set(key, value); err != nil {
+            fmt.Println(err)
+        }
+    }
+    fmt.Println("TestSetWithoutCache:", gtime.Microsecond() - t)
+}
+
+// 测试不带缓存情况下的数据库查询
+func TestGetWithoutCache(count int) {
+    db.SetCache(false)
+    t := gtime.Microsecond()
+    for i := 0; i < count; i++ {
+        key := []byte("key_" + strconv.Itoa(i))
+        if r := db.Get(key); r == nil {
+            fmt.Println("TestGetWithoutCache value not found for index:", i)
+        }
+    }
+    fmt.Println("TestGetWithoutCache:", gtime.Microsecond() - t)
+}
+
+// 测试不带缓存情况下的数据库删除
+func TestRemoveWithoutCache(count int) {
+    db.SetCache(false)
+    t := gtime.Microsecond()
+    for i := 0; i < count; i++ {
+        key := []byte("key_" + strconv.Itoa(i))
+        if err := db.Remove(key); err != nil {
+            fmt.Println(err)
+        }
+    }
+    fmt.Println("TestRemoveWithoutCache:", gtime.Microsecond() - t)
+}
+
+func main() {
+
+    var count int = 0
+    // ==================带缓存的KV操作=======================
+    // 100W性能测试
+    //count  = 1000000
+    //TestSetWithCache(count)
+    //TestGetWithCache(count)
+    //TestRemoveWithCache(count)
+    //// 500W性能测试
+    //count  = 5000000
+    //TestSetWithCache(count)
+    //TestGetWithCache(count)
+    //TestRemoveWithCache(count)
+    //// 1000W性能测试
+    //count  = 10000000
+    //TestSetWithCache(count)
+    //TestGetWithCache(count)
+    //TestRemoveWithCache(count)
     //
-    //}
+    //// ==================不带缓存的KV操作=======================
+    //// 100W性能测试
+    count  = 1
+    TestSetWithoutCache(count)
+    TestGetWithoutCache(count)
+    TestRemoveWithoutCache(count)
+    //// 500W性能测试
+    //count  = 5000000
+    //TestSetWithoutCache(count)
+    //TestGetWithoutCache(count)
+    //TestRemoveWithoutCache(count)
+    //// 1000W性能测试
+    //count  = 10000000
+    //TestSetWithoutCache(count)
+    //TestGetWithoutCache(count)
+    //TestRemoveWithoutCache(count)
+
+    time.Sleep(time.Second)
+
+    db.PrintState()
+
 }

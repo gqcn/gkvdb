@@ -42,7 +42,7 @@ func (db *DB) getMtFileSpace(size int) int64 {
     if i >= 0 {
         extra := int(s - size)
         if extra > 0 {
-            db.addMtFileSpace(i + int(size), extra)
+            db.mtsp.AddBlock(i + int(size), extra)
         }
         return int64(i)
     } else {
@@ -73,7 +73,7 @@ func (db *DB) getDbFileSpace(size int) int64 {
     if i >= 0 {
         extra := s - size
         if extra > 0 {
-            db.addDbFileSpace(i + int(size), extra)
+            db.dbsp.AddBlock(i + int(size), extra)
         }
         return int64(i)
     } else {
@@ -121,7 +121,7 @@ func (db *DB) restoreFileSpace() {
             db.mtsp.Import(buffer[8 : 8 + mtsize])
         }
         if dbsize > 0 {
-            db.mtsp.Import(buffer[8 + mtsize : 8 + mtsize + dbsize])
+            db.dbsp.Import(buffer[8 + mtsize : 8 + mtsize + dbsize])
         }
     }
 }

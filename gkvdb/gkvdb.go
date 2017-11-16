@@ -578,18 +578,20 @@ func (db *DB) updateIndexByRecord(record *Record) error {
     }
     defer ixpf.Close()
 
-    bits := make([]gbinary.Bit, 0)
+    var buffer []byte
     if record.meta.size > 0 {
         // 添加/修改/部分删除
-        bits = gbinary.EncodeBits(bits, uint(record.meta.start/gMETA_BUCKET_SIZE),   32)
-        bits = gbinary.EncodeBits(bits, uint(record.meta.size/gMETA_ITEM_SIZE),      16)
-        bits = gbinary.EncodeBits(bits, 0,                                           16)
+        bits  := make([]gbinary.Bit, 0)
+        bits   = gbinary.EncodeBits(bits, uint(record.meta.start/gMETA_BUCKET_SIZE),   32)
+        bits   = gbinary.EncodeBits(bits, uint(record.meta.size/gMETA_ITEM_SIZE),      16)
+        bits   = gbinary.EncodeBits(bits, 0,                                           16)
+        buffer = gbinary.EncodeBitsToBytes(bits)
     } else {
         // 数据全部删除完
-        bits = make([]gbinary.Bit, gINDEX_BUCKET_SIZE)
+        buffer = make([]byte, gINDEX_BUCKET_SIZE)
     }
 
-    if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
+    if _, err = ixpf.File().WriteAt(buffer, record.index.start); err != nil {
         return err
     }
     return nil

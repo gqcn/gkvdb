@@ -3,6 +3,7 @@ package gkvdb
 import (
     "g/encoding/gbinary"
     "g/os/gfile"
+    "fmt"
 )
 
 // 设置是否开启缓存
@@ -133,19 +134,19 @@ func (db *DB) Values(max int) [][]byte {
 }
 
 // 打印数据库状态(调试使用)
-//func (db *DB) PrintState() {
-//    mtblocks := db.mtsp.GetAllBlocks()
-//    dbblocks := db.dbsp.GetAllBlocks()
-//    fmt.Println("meta pieces:")
-//    fmt.Println("       size:", len(mtblocks))
-//    fmt.Println("       list:", mtblocks)
-//
-//    fmt.Println("data pieces:")
-//    fmt.Println("       size:", len(dbblocks))
-//    fmt.Println("       list:", dbblocks)
-//
-//    fmt.Println("=======================================")
-//}
+func (db *DB) PrintState() {
+    mtblocks := db.mtsp.GetAllBlocks()
+    dbblocks := db.dbsp.GetAllBlocks()
+    fmt.Println("meta pieces:")
+    fmt.Println("       size:", len(mtblocks))
+    fmt.Println("       list:", mtblocks)
+
+    fmt.Println("data pieces:")
+    fmt.Println("       size:", len(dbblocks))
+    fmt.Println("       list:", dbblocks)
+
+    fmt.Println("=======================================")
+}
 
 //// 获取所有的碎片(调试使用)
 //func (db *DB) GetBlocks() []gfilespace.Block {

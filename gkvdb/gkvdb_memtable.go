@@ -71,12 +71,14 @@ func (table *MemTable) sync() {
         return
     }
     for _, k := range table.m.Keys() {
-        v    := table.m.GetAndRemove(k)
+        v    := table.m.Get(k)
         item := v.(MemTableItem)
         if item.deleted {
             table.db.remove(item.key)
         } else {
             table.db.set(item.key, item.value)
         }
+        // 使用完毕再删除，防止获取写入间隔数据无法查找
+        table.m.Remove(k)
     }
 }
