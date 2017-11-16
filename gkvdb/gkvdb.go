@@ -33,7 +33,7 @@ const (
     gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
-    gCACHE_DEFAULT_TIMEOUT   = 60000                    // gcache默认缓存时间(毫秒)
+    gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
     gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
 )
 
@@ -49,7 +49,7 @@ type DB struct {
     mtsp    *gfilespace.Space // 元数据文件碎片管理
     dbsp    *gfilespace.Space // 数据文件碎片管理器
     memt    *MemTable         // MemTable
-    cache   int32             // 是否开启缓存功能(可动态开启/关闭)
+    cached  int32             // 是否开启缓存功能(可动态开启/关闭)
     closed  int32             // 数据库是否关闭，以便异步线程进行判断处理
 }
 
@@ -109,7 +109,7 @@ func New(path, name string) (*DB, error) {
     db := &DB {
         path   : path,
         name   : name,
-        cache  : 1,
+        cached : 1,
     }
     db.memt = newMemTable(db)
 
@@ -163,12 +163,12 @@ func (db *DB) getSpaceFilePath() string {
     return db.path + gfile.Separator + db.name + ".fs"
 }
 
-func (db *DB) getCache() bool {
-    return atomic.LoadInt32(&db.cache) > 0
+func (db *DB) isCacheEnabled() bool {
+    return atomic.LoadInt32(&db.cached) > 0
 }
 
 func (db *DB) setCache(v int32) {
-    atomic.StoreInt32(&db.cache, v)
+    atomic.StoreInt32(&db.cached, v)
 }
 
 func (db *DB) close() {

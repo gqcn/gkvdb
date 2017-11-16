@@ -29,7 +29,7 @@ func (db *DB) Get(key []byte) []byte {
 
 // 设置KV数据
 func (db *DB) Set(key []byte, value []byte) error {
-    if db.getCache() {
+    if db.isCacheEnabled() {
         if err := db.memt.set(key, value); err != nil {
             return err
         }
@@ -40,7 +40,7 @@ func (db *DB) Set(key []byte, value []byte) error {
 
 // 删除KV数据
 func (db *DB) Remove(key []byte) error {
-    if db.getCache() {
+    if db.isCacheEnabled() {
         if err := db.memt.remove(key); err != nil {
             return err
         }
@@ -62,6 +62,11 @@ func (db *DB) RemoveWithoutCache(key []byte) error {
 // 获取max条随机键值对，max=-1时获取所有数据返回
 // 该方法会强制性遍历整个数据库
 func (db *DB) Items(max int) map[string][]byte {
+    // 将缓存数据先同步到磁盘
+    if db.isCacheEnabled() {
+        db.sync()
+    }
+
     mtpf, err := db.mtfp.File()
     if err != nil {
         return nil
