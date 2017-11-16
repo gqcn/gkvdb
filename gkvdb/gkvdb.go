@@ -174,6 +174,9 @@ func (db *DB) setCache(v int32) {
 }
 
 func (db *DB) close() {
+    db.ixfp.Close()
+    db.mtfp.Close()
+    db.dbfp.Close()
     atomic.StoreInt32(&db.closed, 1)
 }
 

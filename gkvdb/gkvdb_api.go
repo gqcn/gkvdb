@@ -11,9 +11,6 @@ func (db *DB) SetCache(enabled bool) {
 
 // 关闭数据库链接
 func (db *DB) Close() {
-    db.ixfp.Close()
-    db.mtfp.Close()
-    db.dbfp.Close()
     db.close()
 }
 
