@@ -1,7 +1,5 @@
 package gkvdb
 
-import "sync/atomic"
-
 // 设置是否开启缓存
 func (db *DB) SetCache(enabled bool) {
     if enabled {
@@ -16,7 +14,7 @@ func (db *DB) Close() {
     db.ixfp.Close()
     db.mtfp.Close()
     db.dbfp.Close()
-    atomic.StoreInt32(&db.closed, 1)
+    db.close()
 }
 
 // 查询KV数据
