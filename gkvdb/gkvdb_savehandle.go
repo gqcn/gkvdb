@@ -10,7 +10,7 @@ func (db *DB) startAutoSavingLoop() {
 
 // 数据
 func (db *DB) autoSavingDataLoop() {
-    for {
+    for !db.isClosed() {
         db.memt.sync()
         time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
     }
@@ -18,7 +18,7 @@ func (db *DB) autoSavingDataLoop() {
 
 // 碎片
 func (db *DB) autoSavingSpaceLoop() {
-    for {
+    for !db.isClosed() {
         db.saveFileSpace()
         time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
     }

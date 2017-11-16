@@ -13,12 +13,17 @@ func (db *DB) initFileSpace() {
     db.dbsp = gfilespace.New()
 }
 
+func (db *DB) getFileSpaceDirtyKey() string {
+    return "filespace_dirty_for_" + db.path + gfile.Separator + db.name
+}
+
+// 异步保存碎片
 func (db *DB) setFileSpaceDirty(dirty bool) {
-    gcache.Set("filespace_dirty", dirty, 0)
+    gcache.Set(db.getFileSpaceDirtyKey(), dirty, 0)
 }
 
 func (db *DB) isFileSpaceDirty() bool {
-    if v := gcache.Get("filespace_dirty"); v != nil {
+    if v := gcache.Get(db.getFileSpaceDirtyKey()); v != nil {
         return v.(bool)
     }
     return false
@@ -89,7 +94,7 @@ func (db *DB) getDbFileSpace(size int) int64 {
 
 // 保存碎片数据到文件
 func (db *DB) saveFileSpace() error {
-    if !db.isFileSpaceDirty() {
+    if !db.isFileSpaceDirty() || (db.mtsp.Len() == 0 && db.dbsp.Len() == 0) {
         return nil
     }
     defer db.setFileSpaceDirty(false)

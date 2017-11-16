@@ -36,7 +36,7 @@ const (
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 60000                    // gcache默认缓存时间(毫秒)
-    gAUTO_SAVING_TIMEOUT     = 1000                     // 自动同步到磁盘的时间(毫秒)
+    gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
 )
 
 // KV数据库
@@ -51,7 +51,8 @@ type DB struct {
     mtsp    *gfilespace.Space // 元数据文件碎片管理
     dbsp    *gfilespace.Space // 数据文件碎片管理器
     memt    *MemTable         // MemTable
-    cache   int32             // 是否开启缓存功能
+    cache   int32             // 是否开启缓存功能(可动态开启/关闭)
+    closed  int32             // 数据库是否关闭，以便异步线程进行判断处理
 }
 
 // 索引项
@@ -170,6 +171,14 @@ func (db *DB) getCache() bool {
 
 func (db *DB) setCache(v int32) {
     atomic.StoreInt32(&db.cache, v)
+}
+
+func (db *DB) close() {
+    atomic.StoreInt32(&db.closed, 1)
+}
+
+func (db *DB) isClosed() bool {
+    return atomic.LoadInt32(&db.closed) > 0
 }
 
 // 根据元数据的size计算cap
