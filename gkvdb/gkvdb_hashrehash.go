@@ -6,7 +6,7 @@ import (
 )
 
 // 对数据库对应元数据列表进行重复分区
-func (db *DB) checkRehash(record *Record) error {
+func (db *DB) checkDeepRehash(record *Record) error {
     if record.meta.size < gMAX_META_LIST_SIZE {
         return nil
     }
@@ -14,22 +14,37 @@ func (db *DB) checkRehash(record *Record) error {
     // 将旧空间添加进碎片管理
     db.addMtFileSpace(int(record.meta.start), record.meta.cap)
 
-    m := make(map[int][]byte)
-    p := gDEFAULT_PART_SIZE + record.index.deep + 1
-    // 遍历元数据列表
-    for i := 0; i < record.meta.size; i += 17 {
-        buffer := record.meta.buffer[i : i + 17]
-        bits   := gbinary.DecodeBytesToBits(buffer)
-        hash64 := gbinary.DecodeBits(bits[0 : 64])
-        part   := int(hash64%uint(p))
-        if _, ok := m[part]; !ok {
-            m[part] = make([]byte, 0)
+    // 计算分区增量，保证数据散列(不保证最优，至少保证不需要重复分区即可)
+    inc  := gDEFAULT_PART_SIZE + 1
+    pmap := make(map[int][]byte)
+    done := true
+    for {
+        for i := 0; i < record.meta.size; i += 17 {
+            buffer := record.meta.buffer[i : i + 17]
+            bits   := gbinary.DecodeBytesToBits(buffer)
+            hash64 := gbinary.DecodeBits(bits[0 : 64])
+            part   := int(hash64%uint(inc))
+            if _, ok := pmap[part]; !ok {
+                pmap[part] = make([]byte, 0)
+            }
+            pmap[part] = append(pmap[part], buffer...)
+            if len(pmap[part]) == gMAX_META_LIST_SIZE {
+                done = false
+                pmap = make(map[int][]byte)
+                inc++
+                break
+            }
         }
-        m[part] = append(m[part], buffer...)
+        if done {
+            break
+        } else {
+            done = true
+        }
     }
+
     // 计算元数据大小以便分配空间
     mtsize := 0
-    for _, v := range m {
+    for _, v := range pmap {
         mtsize += db.getMetaCapBySize(len(v))
     }
     // 生成写入的索引数据及元数据
@@ -37,13 +52,13 @@ func (db *DB) checkRehash(record *Record) error {
     tmpstart := mtstart
     mtbuffer := make([]byte, 0)
     ixbuffer := make([]byte, 0)
-    for i := 0; i < p; i ++ {
+    for i := 0; i < inc; i ++ {
         part := i
-        if v, ok := m[part]; ok {
+        if v, ok := pmap[part]; ok {
             bits     := make([]gbinary.Bit, 0)
-            bits      = gbinary.EncodeBits(bits, uint(tmpstart)/gMETA_BUCKET_SIZE,   36)
-            bits      = gbinary.EncodeBits(bits, uint(len(v))/17,                   19)
-            bits      = gbinary.EncodeBits(bits, 0,                                  1)
+            bits      = gbinary.EncodeBits(bits, uint(tmpstart)/gMETA_BUCKET_SIZE,   32)
+            bits      = gbinary.EncodeBits(bits, uint(len(v))/17,                    16)
+            bits      = gbinary.EncodeBits(bits, 0,                                  16)
             mtcap    := db.getMetaCapBySize(len(v))
             tmpstart += int64(mtcap)
             ixbuffer  = append(ixbuffer, gbinary.EncodeBitsToBytes(bits)...)
@@ -52,7 +67,7 @@ func (db *DB) checkRehash(record *Record) error {
                 mtbuffer = append(mtbuffer, byte(0))
             }
         } else {
-            ixbuffer = append(ixbuffer, make([]byte, 7)...)
+            ixbuffer = append(ixbuffer, make([]byte, gINDEX_BUCKET_SIZE)...)
         }
     }
 
@@ -80,9 +95,9 @@ func (db *DB) checkRehash(record *Record) error {
 
     // 修改老的索引信息
     bits    := make([]gbinary.Bit, 0)
-    bits     = gbinary.EncodeBits(bits, uint(ixstart), 36)
-    bits     = gbinary.EncodeBits(bits, 0,             19)
-    bits     = gbinary.EncodeBits(bits, 1,              1)
+    bits     = gbinary.EncodeBits(bits, uint(ixstart)/gINDEX_BUCKET_SIZE,  32)
+    bits     = gbinary.EncodeBits(bits, 0,                                 16)
+    bits     = gbinary.EncodeBits(bits, uint(inc) - gDEFAULT_PART_SIZE,    16)
     if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
         return err
     }
