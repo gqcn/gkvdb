@@ -2,7 +2,6 @@ package gkvdb
 
 import (
     "g/encoding/gbinary"
-    "fmt"
 )
 
 // 对数据库对应元数据列表进行重复分区
@@ -10,7 +9,7 @@ func (db *DB) checkDeepRehash(record *Record) error {
     if record.meta.size < gMAX_META_LIST_SIZE {
         return nil
     }
-    fmt.Println("need rehash for:", record)
+    //fmt.Println("need rehash for:", record)
     // 将旧空间添加进碎片管理
     db.addMtFileSpace(int(record.meta.start), record.meta.cap)
 
@@ -19,8 +18,8 @@ func (db *DB) checkDeepRehash(record *Record) error {
     pmap := make(map[int][]byte)
     done := true
     for {
-        for i := 0; i < record.meta.size; i += 17 {
-            buffer := record.meta.buffer[i : i + 17]
+        for i := 0; i < record.meta.size; i += gMETA_ITEM_SIZE {
+            buffer := record.meta.buffer[i : i + gMETA_ITEM_SIZE]
             bits   := gbinary.DecodeBytesToBits(buffer)
             hash64 := gbinary.DecodeBits(bits[0 : 64])
             part   := int(hash64%uint(inc))
@@ -57,7 +56,7 @@ func (db *DB) checkDeepRehash(record *Record) error {
         if v, ok := pmap[part]; ok {
             bits     := make([]gbinary.Bit, 0)
             bits      = gbinary.EncodeBits(bits, uint(tmpstart)/gMETA_BUCKET_SIZE,   32)
-            bits      = gbinary.EncodeBits(bits, uint(len(v))/17,                    16)
+            bits      = gbinary.EncodeBits(bits, uint(len(v))/gMETA_ITEM_SIZE,       16)
             bits      = gbinary.EncodeBits(bits, 0,                                  16)
             mtcap    := db.getMetaCapBySize(len(v))
             tmpstart += int64(mtcap)

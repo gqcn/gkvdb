@@ -27,7 +27,7 @@ func main() {
     //fmt.Println(db.Set([]byte("name2"), []byte("john2")))
     //fmt.Println(db.Get([]byte("name")))
     //fmt.Println(db.Get([]byte("name2")))
-    size := 1000000
+    size := 10
     //gtime.SetInterval(2*time.Second, func() bool {
     //    db.PrintState()
     //    //fmt.Println(db.GetBlocks())
@@ -37,21 +37,25 @@ func main() {
     //db.Set([]byte{byte(1)}, []byte{byte(1)})
     ////db.Set([]byte{byte(0)}, []byte{byte(0)})
     //////
-    //for i := 0; i < size; i++ {
-    //    //r := []byte(grand.RandStr(10))
-    //    //if err := db.Set(r, r); err != nil {
-    //    if err := db.Set([]byte("key1_" + strconv.Itoa(i)), []byte("value1_" + strconv.Itoa(i))); err != nil {
-    //    //if err := db.Set(gbinary.EncodeInt32(int32(i)), gbinary.EncodeInt32(int32(i))); err != nil {
-    //        fmt.Println(err)
-    //    }
-    //}
     for i := 0; i < size; i++ {
-        r := db.Get([]byte("key1_" + strconv.Itoa(i)))
+        //r := []byte(grand.RandStr(10))
+        //if err := db.Set(r, r); err != nil {
+        if err := db.Set([]byte("key_" + strconv.Itoa(i)), []byte("value_" + strconv.Itoa(i))); err != nil {
+        //if err := db.Set(gbinary.EncodeInt32(int32(i)), gbinary.EncodeInt32(int32(i))); err != nil {
+            fmt.Println(err)
+        }
+    }
+    for i := 0; i < size; i++ {
+        r := db.Get([]byte("key_" + strconv.Itoa(i)))
         //r := db.Get(gbinary.EncodeInt32(int32(i)))
         if r == nil {
             fmt.Println("none for ", i)
         }
     }
+    fmt.Println(db.Keys(-1))
+    db.Remove([]byte("key_" + strconv.Itoa(1)))
+    fmt.Println(db.Keys(-1))
+    //fmt.Println(db.Values(-1))
     //db.Remove(true)
     //db.Get([]byte("key1_" + strconv.Itoa(99999)))
     //fmt.Println(string(db.Get([]byte("key1_" + strconv.Itoa(99999)))))

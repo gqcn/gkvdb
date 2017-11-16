@@ -1,5 +1,5 @@
 // 基于哈希分区的KV嵌入式数据库
-// KV数据库其实只需要保存键值即可，但本数据库同时保存了键名，以便于后期遍历需要
+// KV数据库其实只需要保存键值即可，但本数据库同时保存了键名，以便遍历需要
 
 // 数据结构要点   ：数据的分配长度cap >= 数据真实长度len，且 cap - len <= bucket，
 //               当数据存储内容发生改变时，依靠碎片管理器对碎片进行回收再利用，且碎片大小 >= bucket
@@ -26,13 +26,12 @@ import (
 
 const (
     gDEFAULT_PART_SIZE       = 100000                   // 默认哈希表分区大小
-    //gDEFAULT_PART_SIZE       = 10                     // 默认哈希表分区大小
     gMAX_KEY_SIZE            = 0xFF                     // 键名最大长度(255byte)
     gMAX_VALUE_SIZE          = 0xFFFFFF                 // 键值最大长度(16MB)
-    gMAX_META_LIST_SIZE      = 65535*17                 // 阶数，元数据列表最大大小(byte)
-    //gMAX_META_LIST_SIZE      = 10*17                  // 阶数，元数据列表最大大小(byte)
+    gMETA_ITEM_SIZE          = 17                       // 元数据单项大小(byte)
+    gMAX_META_LIST_SIZE      = 65535*gMETA_ITEM_SIZE    // 阶数，元数据列表最大大小(byte)
     gINDEX_BUCKET_SIZE       = 8                        // 索引文件数据块大小(byte)
-    gMETA_BUCKET_SIZE        = 17*5                     // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 60000                    // gcache默认缓存时间(毫秒)
@@ -222,7 +221,7 @@ func (db *DB) getIndexInfoByRecord(record *Record) error {
             inc   := uint(gbinary.DecodeBits(bits[48 : 64]))
             if inc == 0 {
                 record.meta.start = start*gMETA_BUCKET_SIZE
-                record.meta.size  = int(gbinary.DecodeBits(bits[32 : 48]))*17
+                record.meta.size  = int(gbinary.DecodeBits(bits[32 : 48]))*gMETA_ITEM_SIZE
                 record.meta.cap   = db.getMetaCapBySize(record.meta.size)
                 record.meta.end   = record.meta.start + int64(record.meta.size)
                 break
@@ -249,7 +248,7 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
     if record.meta.buffer = gfile.GetBinContentByTwoOffsets(pf.File(), record.meta.start, record.meta.end); record.meta.buffer != nil {
         // 二分查找
         min := 0
-        max := len(record.meta.buffer)/17 - 1
+        max := len(record.meta.buffer)/gMETA_ITEM_SIZE - 1
         mid := 0
         cmp := -2
         for {
@@ -258,7 +257,7 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
             }
             for {
                 mid     = int((min + max) / 2)
-                buffer := record.meta.buffer[mid*17 : mid*17 + 17]
+                buffer := record.meta.buffer[mid*gMETA_ITEM_SIZE : mid*gMETA_ITEM_SIZE + gMETA_ITEM_SIZE]
                 bits   := gbinary.DecodeBytesToBits(buffer)
                 hash64 := gbinary.DecodeBits(bits[0 : 64])
                 if record.hash64 < hash64 {
@@ -291,7 +290,7 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
                 }
             }
         }
-        record.meta.index = mid*17
+        record.meta.index = mid*gMETA_ITEM_SIZE
         record.meta.match = cmp
     }
     return nil
@@ -346,17 +345,15 @@ func (db *DB) getValueByKey(key []byte) ([]byte, error) {
 
 // 根据索引信息删除指定数据
 func (db *DB) removeDataByRecord(record *Record) error {
-    oldr := *record
     if err := db.removeDataFromDb(record); err != nil {
         return err
     }
     if err := db.removeDataFromMt(record); err != nil {
         return err
     }
-    if oldr.meta.start != record.meta.start || oldr.meta.size != record.meta.size {
-        if err := db.removeDataFromIx(record); err != nil {
-            return err
-        }
+
+    if err := db.removeDataFromIx(record); err != nil {
+        return err
     }
     return nil
 }
@@ -506,7 +503,7 @@ func (db *DB) saveMeta(slice []byte, buffer []byte, index int, cmp int) []byte {
         // 添加到前面
     } else {
         // 添加到后面
-        pos = index + 17
+        pos = index + gMETA_ITEM_SIZE
         if pos >= len(slice) {
             pos = len(slice)
         }
@@ -520,7 +517,7 @@ func (db *DB) saveMeta(slice []byte, buffer []byte, index int, cmp int) []byte {
 
 // 删除一项
 func (db *DB) removeMeta(slice []byte, index int) []byte {
-    return append(slice[ : index], slice[index + 17 : ]...)
+    return append(slice[ : index], slice[index + gMETA_ITEM_SIZE : ]...)
 }
 
 // 将数据写入到元数据文件中，并更新信息到record
@@ -586,7 +583,7 @@ func (db *DB) updateIndexByRecord(record *Record) error {
     if record.meta.size > 0 {
         // 添加/修改/部分删除
         bits = gbinary.EncodeBits(bits, uint(record.meta.start/gMETA_BUCKET_SIZE),   32)
-        bits = gbinary.EncodeBits(bits, uint(record.meta.size/17),                   16)
+        bits = gbinary.EncodeBits(bits, uint(record.meta.size/gMETA_ITEM_SIZE),      16)
         bits = gbinary.EncodeBits(bits, 0,                                           16)
     } else {
         // 数据全部删除完
