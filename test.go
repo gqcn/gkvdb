@@ -5,7 +5,6 @@ import (
     "g/util/gtime"
     "./gkvdb"
     "strconv"
-    "time"
 )
 
 var db *gkvdb.DB
@@ -97,42 +96,54 @@ func TestRemoveWithoutCache(count int) {
 func main() {
 
     var count int = 0
+
+    //
+    //// ==================不带缓存的KV操作=======================
+    //// 100W性能测试
+    //fmt.Println("=======================================100W without cache=======================================")
+    //count = 1000000
+    //TestSetWithoutCache(count)
+    //TestGetWithoutCache(count)
+    //TestRemoveWithoutCache(count)
+    ////// 500W性能测试
+    //fmt.Println("=======================================500W without cache=======================================")
+    //count = 5000000
+    //TestSetWithoutCache(count)
+    //TestGetWithoutCache(count)
+    //TestRemoveWithoutCache(count)
+    //// 1000W性能测试
+    //fmt.Println("=======================================1000W without cache=======================================")
+    //count = 10000000
+    //TestSetWithoutCache(count)
+    //TestGetWithoutCache(count)
+    //TestRemoveWithoutCache(count)
+
+    //time.Sleep(time.Second)
+    //db.PrintState()
+
+
+
+
     // ==================带缓存的KV操作=======================
     // 100W性能测试
+    //fmt.Println("=======================================100W with cache=======================================")
     //count  = 1000000
     //TestSetWithCache(count)
     //TestGetWithCache(count)
     //TestRemoveWithCache(count)
-    //// 500W性能测试
+    // 500W性能测试
+    //fmt.Println("=======================================500W with cache=======================================")
     //count  = 5000000
     //TestSetWithCache(count)
     //TestGetWithCache(count)
     //TestRemoveWithCache(count)
     //// 1000W性能测试
+    //fmt.Println("=======================================1000W with cache=======================================")
     //count  = 10000000
     //TestSetWithCache(count)
     //TestGetWithCache(count)
     //TestRemoveWithCache(count)
-    //
-    //// ==================不带缓存的KV操作=======================
-    //// 100W性能测试
-    count  = 1
-    TestSetWithoutCache(count)
-    TestGetWithoutCache(count)
-    TestRemoveWithoutCache(count)
-    //// 500W性能测试
-    //count  = 5000000
-    //TestSetWithoutCache(count)
-    //TestGetWithoutCache(count)
-    //TestRemoveWithoutCache(count)
-    //// 1000W性能测试
-    //count  = 10000000
-    //TestSetWithoutCache(count)
-    //TestGetWithoutCache(count)
-    //TestRemoveWithoutCache(count)
 
-    time.Sleep(time.Second)
 
-    db.PrintState()
 
 }

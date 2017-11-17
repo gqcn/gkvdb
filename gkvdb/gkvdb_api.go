@@ -55,11 +55,6 @@ func (db *DB) SetWithoutCache(key []byte, value []byte) error {
     return db.set(key, value)
 }
 
-// 删除KV数据(强制不使用缓存)
-func (db *DB) RemoveWithoutCache(key []byte) error {
-    return db.remove(key)
-}
-
 // 获取max条随机键值对，max=-1时获取所有数据返回
 // 该方法会强制性遍历整个数据库
 func (db *DB) Items(max int) map[string][]byte {
