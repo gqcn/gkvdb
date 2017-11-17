@@ -13,8 +13,12 @@ func (db *DB) checkDeepRehash(record *Record) error {
     // 将旧空间添加进碎片管理
     db.addMtFileSpace(int(record.meta.start), record.meta.cap)
 
-    // 计算分区增量，保证数据散列(不保证最优，至少保证不需要重复分区即可)
-    inc  := gDEFAULT_PART_SIZE + 1
+    // 计算分区增量，保证数据散列(分区后在同一请求处理中不再进行二次分区)
+    // 分区增量必须为奇数，保证分区数据分配均匀
+    inc := gDEFAULT_PART_SIZE + record.index.inc + 1
+    if inc%2 != 0 {
+        inc++
+    }
     pmap := make(map[int][]byte)
     done := true
     for {
@@ -31,6 +35,9 @@ func (db *DB) checkDeepRehash(record *Record) error {
                 done = false
                 pmap = make(map[int][]byte)
                 inc++
+                if inc%2 != 0 {
+                    inc++
+                }
                 break
             }
         }
@@ -55,9 +62,9 @@ func (db *DB) checkDeepRehash(record *Record) error {
         part := i
         if v, ok := pmap[part]; ok {
             bits     := make([]gbinary.Bit, 0)
-            bits      = gbinary.EncodeBits(bits, uint(tmpstart)/gMETA_BUCKET_SIZE,   32)
-            bits      = gbinary.EncodeBits(bits, uint(len(v))/gMETA_ITEM_SIZE,       16)
-            bits      = gbinary.EncodeBits(bits, 0,                                  16)
+            bits      = gbinary.EncodeBits(bits, uint(tmpstart)/gMETA_BUCKET_SIZE,   36)
+            bits      = gbinary.EncodeBits(bits, uint(len(v))/gMETA_ITEM_SIZE,       19)
+            bits      = gbinary.EncodeBits(bits, 0,                                   1)
             mtcap    := db.getMetaCapBySize(len(v))
             tmpstart += int64(mtcap)
             ixbuffer  = append(ixbuffer, gbinary.EncodeBitsToBytes(bits)...)
@@ -94,9 +101,9 @@ func (db *DB) checkDeepRehash(record *Record) error {
 
     // 修改老的索引信息
     bits    := make([]gbinary.Bit, 0)
-    bits     = gbinary.EncodeBits(bits, uint(ixstart)/gINDEX_BUCKET_SIZE,  32)
-    bits     = gbinary.EncodeBits(bits, 0,                                 16)
-    bits     = gbinary.EncodeBits(bits, uint(inc) - gDEFAULT_PART_SIZE,    16)
+    bits     = gbinary.EncodeBits(bits, uint(ixstart)/gINDEX_BUCKET_SIZE,  36)
+    bits     = gbinary.EncodeBits(bits, uint(inc) - gDEFAULT_PART_SIZE,    19)
+    bits     = gbinary.EncodeBits(bits, 1,                                  1)
     if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
         return err
     }

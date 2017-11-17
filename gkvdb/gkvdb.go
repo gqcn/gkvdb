@@ -3,7 +3,7 @@
 // 数据结构要点   ：数据的分配长度cap >= 数据真实长度len，且 cap - len <= bucket，
 //               当数据存储内容发生改变时，依靠碎片管理器对碎片进行回收再利用，且碎片大小 >= bucket
 
-// 索引文件结构  ：元数据文件偏移量倍数(32bit,4GB*元数据桶大小)|下一层级索引的文件偏移量倍数(重复分区标志位=1时有效) 元数据文件列表项大小(16bit,65535) 分区增量(16bit,65535)
+// 索引文件结构  ：元数据文件偏移量倍数(36bit,64GB*元数据桶大小)|下一层级索引的文件偏移量倍数(重复分区标志位=1时有效) 元数据文件列表项大小(19bit,524287)|分区增量 深度分区标识符(1bit)
 // 元数据文件结构 :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长,链表)
 // 数据文件结构  ：键名(变长) 键值(变长)
 
@@ -29,7 +29,7 @@ const (
     gMAX_VALUE_SIZE          = 0xFFFFFF                 // 键值最大长度(16MB)
     gMETA_ITEM_SIZE          = 17                       // 元数据单项大小(byte)
     gMAX_META_LIST_SIZE      = 65535*gMETA_ITEM_SIZE    // 阶数，元数据列表最大大小(byte)
-    gINDEX_BUCKET_SIZE       = 8                        // 索引文件数据块大小(byte)
+    gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小(byte)
     gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
@@ -215,18 +215,19 @@ func (db *DB) getIndexInfoByRecord(record *Record) error {
     record.index.end   = record.index.start + gINDEX_BUCKET_SIZE
     for {
         if buffer := gfile.GetBinContentByTwoOffsets(pf.File(), record.index.start, record.index.end); buffer != nil {
-            bits  := gbinary.DecodeBytesToBits(buffer)
-            start := int64(gbinary.DecodeBits(bits[0 : 32]))
-            inc   := uint(gbinary.DecodeBits(bits[48 : 64]))
-            if inc == 0 {
+            bits     := gbinary.DecodeBytesToBits(buffer)
+            start    := int64(gbinary.DecodeBits(bits[0 : 36]))
+            rehashed := uint(gbinary.DecodeBits(bits[55 : 56]))
+            if rehashed == 0 {
                 record.meta.start = start*gMETA_BUCKET_SIZE
-                record.meta.size  = int(gbinary.DecodeBits(bits[32 : 48]))*gMETA_ITEM_SIZE
+                record.meta.size  = int(gbinary.DecodeBits(bits[36 : 55]))*gMETA_ITEM_SIZE
                 record.meta.cap   = db.getMetaCapBySize(record.meta.size)
                 record.meta.end   = record.meta.start + int64(record.meta.size)
                 break
             } else {
-                record.index.inc    = int(inc)
-                record.index.start  = start*gINDEX_BUCKET_SIZE + int64(record.hash64%(gDEFAULT_PART_SIZE + uint(record.index.inc)))*gINDEX_BUCKET_SIZE
+                partition          := gDEFAULT_PART_SIZE + record.index.inc
+                record.index.inc    = int(gbinary.DecodeBits(bits[36 : 55]))
+                record.index.start  = start*gINDEX_BUCKET_SIZE + int64(record.hash64%uint(partition))*gINDEX_BUCKET_SIZE
                 record.index.end    = record.index.start + gINDEX_BUCKET_SIZE
             }
         } else {
@@ -582,9 +583,9 @@ func (db *DB) updateIndexByRecord(record *Record) error {
     if record.meta.size > 0 {
         // 添加/修改/部分删除
         bits  := make([]gbinary.Bit, 0)
-        bits   = gbinary.EncodeBits(bits, uint(record.meta.start/gMETA_BUCKET_SIZE),   32)
-        bits   = gbinary.EncodeBits(bits, uint(record.meta.size/gMETA_ITEM_SIZE),      16)
-        bits   = gbinary.EncodeBits(bits, 0,                                           16)
+        bits   = gbinary.EncodeBits(bits, uint(record.meta.start/gMETA_BUCKET_SIZE),   36)
+        bits   = gbinary.EncodeBits(bits, uint(record.meta.size/gMETA_ITEM_SIZE),      19)
+        bits   = gbinary.EncodeBits(bits, 0,                                            1)
         buffer = gbinary.EncodeBitsToBytes(bits)
     } else {
         // 数据全部删除完
