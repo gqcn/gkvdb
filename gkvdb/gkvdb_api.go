@@ -1,8 +1,6 @@
 package gkvdb
 
 import (
-    "g/encoding/gbinary"
-    "g/os/gfile"
     "fmt"
 )
 
@@ -58,54 +56,7 @@ func (db *DB) SetWithoutCache(key []byte, value []byte) error {
 // 获取max条随机键值对，max=-1时获取所有数据返回
 // 该方法会强制性遍历整个数据库
 func (db *DB) Items(max int) map[string][]byte {
-    // 将缓存数据先同步到磁盘
-    if db.isCacheEnabled() {
-        db.sync()
-    }
-
-    mtpf, err := db.mtfp.File()
-    if err != nil {
-        return nil
-    }
-    defer mtpf.Close()
-
-    dbpf, err := db.dbfp.File()
-    if err != nil {
-        return nil
-    }
-    defer dbpf.Close()
-
-    m := make(map[string][]byte)
-    for start := int64(0); ; start += gMETA_BUCKET_SIZE {
-        if db.mtsp.Contains(int(start), gMETA_BUCKET_SIZE) {
-            continue
-        }
-        if b := gfile.GetBinContentByTwoOffsets(mtpf.File(), start, start + gMETA_BUCKET_SIZE); b != nil {
-            for i := 0; i < gMETA_BUCKET_SIZE; i += gMETA_ITEM_SIZE {
-                if db.mtsp.Contains(i, gMETA_ITEM_SIZE) {
-                    continue
-                }
-                buffer := b[i : i + gMETA_ITEM_SIZE]
-                bits   := gbinary.DecodeBytesToBits(buffer)
-                klen   := int(gbinary.DecodeBits(bits[64 : 72]))
-                vlen   := int(gbinary.DecodeBits(bits[72 : 96]))
-                if klen > 0 && vlen > 0 {
-                    start := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
-                    end   := start + int64(klen + vlen)
-                    data  := gfile.GetBinContentByTwoOffsets(dbpf.File(), start, end)
-                    key   := data[0 : klen]
-                    value := data[klen :  ]
-                    m[string(key)] = value
-                    if len(m) == max {
-                        return m
-                    }
-                }
-            }
-        } else {
-            break
-        }
-    }
-    return m
+    return db.items(max)
 }
 
 // 获取最多max个随机键名，构成列表返回

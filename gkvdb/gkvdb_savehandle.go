@@ -1,6 +1,9 @@
 package gkvdb
 
-import "time"
+import (
+    "time"
+    "g/os/gcache"
+)
 
 // 自动保存线程循环
 func (db *DB) startAutoSavingLoop() {
@@ -11,7 +14,9 @@ func (db *DB) startAutoSavingLoop() {
 // 数据
 func (db *DB) autoSavingDataLoop() {
     for !db.isClosed() {
-        db.memt.sync()
+        if db.isCacheEnabled() {
+            db.autoSyncMemtable()
+        }
         time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
     }
 }
@@ -19,7 +24,9 @@ func (db *DB) autoSavingDataLoop() {
 // 碎片
 func (db *DB) autoSavingSpaceLoop() {
     for !db.isClosed() {
-        db.saveFileSpace()
+        if db.isCacheEnabled() {
+            db.autoSyncFileSpace()
+        }
         time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
     }
 }
@@ -29,3 +36,27 @@ func (db *DB) sync() {
     db.memt.sync()
     db.saveFileSpace()
 }
+
+func (db *DB) autoSyncMemtable() {
+    key := "memtable_sync_cache_key_for_" + db.path + db.name
+    if gcache.Get(key) != nil {
+        return
+    }
+    gcache.Set(key, struct{}{}, 86400)
+    defer gcache.Remove(key)
+
+    db.memt.sync()
+}
+
+func (db *DB) autoSyncFileSpace() {
+    key := "filespace_sync_cache_key_for_" + db.path + db.name
+    if gcache.Get(key) != nil {
+        return
+    }
+    gcache.Set(key, struct{}{}, 86400)
+    defer gcache.Remove(key)
+
+    db.saveFileSpace()
+}
+
+

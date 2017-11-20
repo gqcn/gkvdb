@@ -4,7 +4,7 @@ import (
     "g/os/gfile"
     "g/encoding/gbinary"
     "g/os/gfilespace"
-    "g/os/gcache"
+    "sync/atomic"
 )
 
 // 初始化碎片管理器
@@ -13,20 +13,21 @@ func (db *DB) initFileSpace() {
     db.dbsp = gfilespace.New()
 }
 
-func (db *DB) getFileSpaceDirtyKey() string {
-    return "filespace_dirty_for_" + db.path + gfile.Separator + db.name
-}
-
-// 异步保存碎片
+// 标志数据可写
 func (db *DB) setFileSpaceDirty(dirty bool) {
-    gcache.Set(db.getFileSpaceDirtyKey(), dirty, 0)
+    if dirty {
+        atomic.StoreInt32(&db.fsdirty, 1)
+        if !db.isCacheEnabled() {
+            db.saveFileSpace()
+        }
+    } else {
+        atomic.StoreInt32(&db.fsdirty, 0)
+    }
 }
 
+// 判断碎片时候可写
 func (db *DB) isFileSpaceDirty() bool {
-    if v := gcache.Get(db.getFileSpaceDirtyKey()); v != nil {
-        return v.(bool)
-    }
-    return false
+    return atomic.LoadInt32(&db.fsdirty) > 0
 }
 
 // 元数据碎片

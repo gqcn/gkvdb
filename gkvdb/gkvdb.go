@@ -21,6 +21,7 @@ import (
     "g/os/gfilespace"
     "sync"
     "sync/atomic"
+    "bytes"
 )
 
 const (
@@ -49,6 +50,7 @@ type DB struct {
     mtsp    *gfilespace.Space // 元数据文件碎片管理
     dbsp    *gfilespace.Space // 数据文件碎片管理器
     memt    *MemTable         // MemTable
+    fsdirty int32             // 碎片是否可写
     cached  int32             // 是否开启缓存功能(可动态开启/关闭)
     closed  int32             // 数据库是否关闭，以便异步线程进行判断处理
 }
@@ -85,6 +87,7 @@ type Data struct {
 type Record struct {
     hash64    uint    // 64位的hash code
     key       []byte  // 键名
+    value     []byte  // 键值
     index     Index
     meta      Meta
     data      Data
@@ -238,7 +241,7 @@ func (db *DB) getIndexInfoByRecord(record *Record) error {
 }
 
 // 获得元数据信息，对比hash64和关键字长度
-func (db *DB) getMetaInfoByRecord(record *Record) error {
+func (db *DB) getDataInfoByRecord(record *Record) error {
     pf, err := db.mtfp.File()
     if err != nil {
         return err
@@ -256,6 +259,7 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
                 break
             }
             for {
+                // 首先对比哈希值
                 mid     = int((min + max) / 2)
                 buffer := record.meta.buffer[mid*gMETA_ITEM_SIZE : mid*gMETA_ITEM_SIZE + gMETA_ITEM_SIZE]
                 bits   := gbinary.DecodeBytesToBits(buffer)
@@ -267,6 +271,7 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
                     min = mid + 1
                     cmp = 1
                 } else {
+                    // 其次对比键名长度
                     klen := int(gbinary.DecodeBits(bits[64 : 72]))
                     if len(record.key) < klen {
                         max = mid - 1
@@ -275,14 +280,23 @@ func (db *DB) getMetaInfoByRecord(record *Record) error {
                         min = mid + 1
                         cmp = 1
                     } else {
-                        cmp = 0
-                        record.data.klen   = klen
-                        record.data.vlen   = int(gbinary.DecodeBits(bits[72 : 96]))
-                        record.data.size   = record.data.klen + record.data.vlen
-                        record.data.cap    = db.getDataCapBySize(record.data.size)
-                        record.data.start  = int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
-                        record.data.end    = record.data.start + int64(record.data.size)
-                        break
+                        // 最后对比完整键名
+                        vlen    := int(gbinary.DecodeBits(bits[72 : 96]))
+                        dbstart := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
+                        dbsize  := klen + vlen
+                        dbend   := dbstart + int64(dbsize)
+                        if data := db.getDataByOffset(dbstart, dbend); data != nil {
+                            if cmp = bytes.Compare(record.key, data[0 : klen]); cmp == 0 {
+                                record.value       = data[klen:]
+                                record.data.klen   = klen
+                                record.data.vlen   = vlen
+                                record.data.size   = dbsize
+                                record.data.cap    = db.getDataCapBySize(dbsize)
+                                record.data.start  = dbstart
+                                record.data.end    = dbend
+                                break
+                            }
+                        }
                     }
                 }
                 if cmp == 0 || min > max {
@@ -311,11 +325,27 @@ func (db *DB) getRecordByKey(key []byte) (*Record, error) {
 
     // 查询数据信息
     if record.meta.end > 0 {
-        if err := db.getMetaInfoByRecord(record); err != nil {
+        if err := db.getDataInfoByRecord(record); err != nil {
             return record, err
         }
     }
     return record, nil
+}
+
+// 查询数据信息键值
+func (db *DB) getDataByOffset(start, end int64) []byte {
+    if end > 0 {
+        pf, err := db.dbfp.File()
+        if err != nil {
+            return nil
+        }
+        defer pf.Close()
+        buffer := gfile.GetBinContentByTwoOffsets(pf.File(), start, end)
+        if buffer != nil {
+            return buffer
+        }
+    }
+    return nil
 }
 
 // 查询数据信息键值
@@ -329,18 +359,7 @@ func (db *DB) getValueByKey(key []byte) ([]byte, error) {
         return nil, nil
     }
 
-    if record.data.end > 0 {
-        pf, err := db.dbfp.File()
-        if err != nil {
-            return nil, err
-        }
-        defer pf.Close()
-        buffer := gfile.GetBinContentByTwoOffsets(pf.File(), record.data.start + int64(record.data.klen), record.data.end)
-        if buffer != nil {
-            return buffer, nil
-        }
-    }
-    return nil, nil
+    return record.value, nil
 }
 
 // 根据索引信息删除指定数据
@@ -588,7 +607,7 @@ func (db *DB) updateIndexByRecord(record *Record) error {
         bits   = gbinary.EncodeBits(bits, 0,                                            1)
         buffer = gbinary.EncodeBitsToBytes(bits)
     } else {
-        // 数据全部删除完
+        // 数据全部删除完，标记为0
         buffer = make([]byte, gINDEX_BUCKET_SIZE)
     }
 
