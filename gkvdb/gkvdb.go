@@ -36,6 +36,8 @@ const (
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
     gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
+    gAUTO_COMPACTING_PERCENT = 1/4                      // 数据整理最低比例
+    gAUTO_COMPACTING_TIMEOUT = 10000                    // 自动检测数据迁移的时间(毫秒)
 )
 
 // KV数据库
@@ -112,7 +114,7 @@ func New(path, name string) (*DB, error) {
     db := &DB {
         path   : path,
         name   : name,
-        cached : 1,
+        cached : 0,
     }
     db.memt = newMemTable(db)
 

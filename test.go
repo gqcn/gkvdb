@@ -17,6 +17,7 @@ func init() {
 
 // 测试默认带缓存情况下的数据库写入
 func TestSetWithCache(count int) {
+    db.SetCache(true)
     t := gtime.Microsecond()
     for i := 0; i < count; i++ {
         key   := []byte("key_" + strconv.Itoa(i))
@@ -30,6 +31,7 @@ func TestSetWithCache(count int) {
 
 // 测试默认带缓存情况下的数据库查询
 func TestGetWithCache(count int) {
+    db.SetCache(true)
     t := gtime.Microsecond()
     for i := 0; i < count; i++ {
         key := []byte("key_" + strconv.Itoa(i))
@@ -42,6 +44,7 @@ func TestGetWithCache(count int) {
 
 // 测试默认带缓存情况下的数据库删除
 func TestRemoveWithCache(count int) {
+    db.SetCache(true)
     t := gtime.Microsecond()
     for i := 0; i < count; i++ {
         key := []byte("key_" + strconv.Itoa(i))

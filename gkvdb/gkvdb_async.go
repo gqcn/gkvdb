@@ -1,14 +1,45 @@
+// 异步goroutine模块
 package gkvdb
 
 import (
     "time"
     "g/os/gcache"
+    "g/os/gfile"
 )
 
 // 自动保存线程循环
 func (db *DB) startAutoSavingLoop() {
     go db.autoSavingDataLoop()
     go db.autoSavingSpaceLoop()
+}
+
+// 数据迁移处理
+func (db *DB) startCompactingLoop() {
+    go func() {
+        for !db.isClosed() {
+            mtsize   := gfile.Size(db.getMetaFilePath())
+            mtspsize := db.mtsp.SumSize()
+            if float32(int64(mtspsize)/mtsize) >= gAUTO_COMPACTING_PERCENT {
+                db.compactMeta()
+            }
+            dbsize   := gfile.Size(db.getDataFilePath())
+            dbspsize := db.dbsp.SumSize()
+            if float32(int64(dbspsize)/dbsize) >= gAUTO_COMPACTING_PERCENT {
+                db.compactData()
+            }
+            time.Sleep(gAUTO_COMPACTING_TIMEOUT*time.Millisecond)
+        }
+    }()
+}
+
+// 元数据
+func (db *DB) compactMeta() {
+
+}
+
+// 数据
+func (db *DB) compactData() {
+
 }
 
 // 数据
