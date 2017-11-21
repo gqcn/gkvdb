@@ -25,17 +25,11 @@ func (db *DB) autoSavingDataLoop() {
 // 碎片
 func (db *DB) autoSavingSpaceLoop() {
     for !db.isClosed() {
-        //if db.isCacheEnabled() {
+        if db.isCacheEnabled() {
             db.autoSyncFileSpace()
-        //}
+        }
         time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
     }
-}
-
-// 同步数据到磁盘
-func (db *DB) sync() {
-    db.memt.sync()
-    db.saveFileSpace()
 }
 
 func (db *DB) autoSyncMemtable() {

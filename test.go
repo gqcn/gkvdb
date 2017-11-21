@@ -98,7 +98,6 @@ func TestRemoveWithoutCache(count int) {
 }
 
 func main() {
-
     var count int = 0
 
     //
