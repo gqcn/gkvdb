@@ -42,7 +42,8 @@ func (db *DB) set(key []byte, value []byte) error {
     }
 
     // 写入数据文件，并更新record信息
-    if err := db.insertDataByRecord(key, value, record); err != nil {
+    record.value = value
+    if err := db.insertDataByRecord(record); err != nil {
         return errors.New("inserting data error: " + err.Error())
     }
 
@@ -105,8 +106,8 @@ func (db *DB) items(max int) map[string][]byte {
                     start := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
                     end   := start + int64(klen + vlen)
                     data  := gfile.GetBinContentByTwoOffsets(dbpf.File(), start, end)
-                    key   := data[0 : klen]
-                    value := data[klen :  ]
+                    key   := data[1 : 1 + klen]
+                    value := data[1 + klen : ]
                     m[string(key)] = value
                     if len(m) == max {
                         return m

@@ -5,7 +5,7 @@
 
 // 索引文件结构  ：元数据文件偏移量倍数(36bit,64GB*元数据桶大小)|下一层级索引的文件偏移量倍数(重复分区标志位=1时有效) 元数据文件列表项大小(19bit,524287)|分区增量 深度分区标识符(1bit)
 // 元数据文件结构 :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长,链表)
-// 数据文件结构  ：键名(变长) 键值(变长)
+// 数据文件结构  ：键名长度(8bit) 键名(变长) 键值(变长)
 
 
 package gkvdb
@@ -36,8 +36,7 @@ const (
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
     gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
-    gAUTO_COMPACTING_PERCENT = 1/4                      // 数据整理最低比例
-    gAUTO_COMPACTING_TIMEOUT = 10000                    // 自动检测数据迁移的时间(毫秒)
+    gAUTO_COMPACTING_TIMEOUT = 5000                     // 自动进行数据整理的时间(毫秒)
 )
 
 // KV数据库
@@ -149,6 +148,7 @@ func New(path, name string) (*DB, error) {
     db.initFileSpace()
     db.restoreFileSpace()
     db.startAutoSavingLoop()
+    //db.startAutoCompactingLoop()
     return db, nil
 }
 
@@ -285,11 +285,11 @@ func (db *DB) getDataInfoByRecord(record *Record) error {
                         // 最后对比完整键名
                         vlen    := int(gbinary.DecodeBits(bits[72 : 96]))
                         dbstart := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
-                        dbsize  := klen + vlen
+                        dbsize  := klen + vlen + 1
                         dbend   := dbstart + int64(dbsize)
                         if data := db.getDataByOffset(dbstart, dbend); data != nil {
-                            if cmp = bytes.Compare(record.key, data[0 : klen]); cmp == 0 {
-                                record.value       = data[klen:]
+                            if cmp = bytes.Compare(record.key, data[1 : 1 + klen]); cmp == 0 {
+                                record.value       = data[1 + klen:]
                                 record.data.klen   = klen
                                 record.data.vlen   = vlen
                                 record.data.size   = dbsize
@@ -443,73 +443,28 @@ func (db *DB) checkAndResizeDbCap(record *Record) {
 }
 
 // 插入一条KV数据
-func (db *DB) insertDataByRecord(key []byte, value []byte, record *Record) error {
-    record.data.klen = len(key)
-    record.data.vlen = len(value)
-    record.data.size = record.data.klen + record.data.vlen
-
-    // 保存旧记录，用以判断索引更新
-    oldr := *record
+func (db *DB) insertDataByRecord(record *Record) error {
+    record.data.klen = len(record.key)
+    record.data.vlen = len(record.value)
+    record.data.size = record.data.klen + record.data.vlen + 1
 
     // 写入数据文件
-    if err := db.insertDataIntoDb(key, value, record); err != nil {
+    if err := db.updateDataByRecord(record); err != nil {
         return err
     }
 
     // 写入元数据
-    if err := db.insertDataIntoMt(key, value, record); err != nil {
+    if err := db.updateMetaByRecord(record); err != nil {
         return err
     }
 
     // 根据record信息更新索引文件
-    if oldr.meta.start != record.meta.start || oldr.meta.size != record.meta.size {
-        if err := db.updateIndexByRecord(record); err != nil {
-            return errors.New("creating index error: " + err.Error())
-        }
+    if err := db.updateIndexByRecord(record); err != nil {
+        return err
     }
 
     // 判断是否需要重复分区
     db.checkDeepRehash(record)
-    return nil
-}
-
-// 将数据写入到数据文件中，并更新信息到record
-func (db *DB) insertDataIntoDb(key []byte, value []byte, record *Record) error {
-    pf, err := db.dbfp.File()
-    if err != nil {
-        return err
-    }
-    defer pf.Close()
-    // 判断是否额外分配键值存储空间
-    if record.data.end <= 0 || record.data.cap < record.data.size {
-        // 不用的空间添加到碎片管理器
-        if record.data.end > 0 && record.data.cap > 0 {
-            //fmt.Println("add db block", int(record.data.start), uint(record.data.cap))
-            db.addDbFileSpace(int(record.data.start), record.data.cap)
-        }
-        // 重新计算所需空间
-        if record.data.cap < record.data.size {
-            for {
-                record.data.cap += gDATA_BUCKET_SIZE
-                if record.data.cap >= record.data.size {
-                    break
-                }
-            }
-        }
-        record.data.start = db.getDbFileSpace(record.data.cap)
-        record.data.end   = record.data.start + int64(record.data.size)
-    }
-    // vlen不够vcap的对末尾进行补0占位(便于文件末尾分配空间)
-    buffer := make([]byte, 0)
-    buffer  = append(buffer, key...)
-    buffer  = append(buffer, value...)
-    for i := 0; i < int(record.data.cap - record.data.size); i++ {
-        buffer = append(buffer, byte(0))
-    }
-    if _, err = pf.File().WriteAt(buffer, record.data.start); err != nil {
-        return err
-    }
-    db.checkAndResizeDbCap(record)
     return nil
 }
 
@@ -541,8 +496,49 @@ func (db *DB) removeMeta(slice []byte, index int) []byte {
     return append(slice[ : index], slice[index + gMETA_ITEM_SIZE : ]...)
 }
 
+// 将数据写入到数据文件中，并更新信息到record
+func (db *DB) updateDataByRecord(record *Record) error {
+    pf, err := db.dbfp.File()
+    if err != nil {
+        return err
+    }
+    defer pf.Close()
+    // 判断是否额外分配键值存储空间
+    if record.data.end <= 0 || record.data.cap < record.data.size {
+        // 不用的空间添加到碎片管理器
+        if record.data.end > 0 && record.data.cap > 0 {
+            //fmt.Println("add db block", int(record.data.start), uint(record.data.cap))
+            db.addDbFileSpace(int(record.data.start), record.data.cap)
+        }
+        // 重新计算所需空间
+        if record.data.cap < record.data.size {
+            for {
+                record.data.cap += gDATA_BUCKET_SIZE
+                if record.data.cap >= record.data.size {
+                    break
+                }
+            }
+        }
+        record.data.start = db.getDbFileSpace(record.data.cap)
+        record.data.end   = record.data.start + int64(record.data.size)
+    }
+    // vlen不够vcap的对末尾进行补0占位(便于文件末尾分配空间)
+    buffer := make([]byte, 0)
+    buffer  = append(buffer, byte(len(record.key)))
+    buffer  = append(buffer, record.key...)
+    buffer  = append(buffer, record.value...)
+    for i := 0; i < int(record.data.cap - record.data.size); i++ {
+        buffer = append(buffer, byte(0))
+    }
+    if _, err = pf.File().WriteAt(buffer, record.data.start); err != nil {
+        return err
+    }
+    db.checkAndResizeDbCap(record)
+    return nil
+}
+
 // 将数据写入到元数据文件中，并更新信息到record
-func (db *DB) insertDataIntoMt(key []byte, value []byte, record *Record) error {
+func (db *DB) updateMetaByRecord(record *Record) error {
     pf, err := db.mtfp.File()
     if err != nil {
         return err
@@ -587,8 +583,8 @@ func (db *DB) insertDataIntoMt(key []byte, value []byte, record *Record) error {
     if _, err = pf.File().WriteAt(buffer, record.meta.start); err != nil {
         return err
     }
-    db.checkAndResizeMtCap(record)
 
+    db.checkAndResizeMtCap(record)
     return nil
 }
 

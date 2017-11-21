@@ -17,9 +17,9 @@ func (db *DB) initFileSpace() {
 func (db *DB) setFileSpaceDirty(dirty bool) {
     if dirty {
         atomic.StoreInt32(&db.fsdirty, 1)
-        if !db.isCacheEnabled() {
-            db.saveFileSpace()
-        }
+        //if !db.isCacheEnabled() {
+        //    db.saveFileSpace()
+        //}
     } else {
         atomic.StoreInt32(&db.fsdirty, 0)
     }
@@ -30,11 +30,18 @@ func (db *DB) isFileSpaceDirty() bool {
     return atomic.LoadInt32(&db.fsdirty) > 0
 }
 
+func (db *DB) getMtFileSpaceMaxSize() int {
+    return db.mtsp.GetMaxSize()
+}
+
+func (db *DB) getDbFileSpaceMaxSize() int {
+    return db.dbsp.GetMaxSize()
+}
+
 // 元数据碎片
 func (db *DB) addMtFileSpace(index int, size int) {
     defer db.setFileSpaceDirty(true)
     db.mtsp.AddBlock(index, size)
-
 }
 
 func (db *DB) getMtFileSpace(size int) int64 {

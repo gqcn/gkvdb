@@ -1,45 +1,15 @@
-// 异步goroutine模块
+// 缓存启用时的自动保存goroutine
 package gkvdb
 
 import (
     "time"
     "g/os/gcache"
-    "g/os/gfile"
 )
 
 // 自动保存线程循环
 func (db *DB) startAutoSavingLoop() {
     go db.autoSavingDataLoop()
     go db.autoSavingSpaceLoop()
-}
-
-// 数据迁移处理
-func (db *DB) startCompactingLoop() {
-    go func() {
-        for !db.isClosed() {
-            mtsize   := gfile.Size(db.getMetaFilePath())
-            mtspsize := db.mtsp.SumSize()
-            if float32(int64(mtspsize)/mtsize) >= gAUTO_COMPACTING_PERCENT {
-                db.compactMeta()
-            }
-            dbsize   := gfile.Size(db.getDataFilePath())
-            dbspsize := db.dbsp.SumSize()
-            if float32(int64(dbspsize)/dbsize) >= gAUTO_COMPACTING_PERCENT {
-                db.compactData()
-            }
-            time.Sleep(gAUTO_COMPACTING_TIMEOUT*time.Millisecond)
-        }
-    }()
-}
-
-// 元数据
-func (db *DB) compactMeta() {
-
-}
-
-// 数据
-func (db *DB) compactData() {
-
 }
 
 // 数据
@@ -55,9 +25,9 @@ func (db *DB) autoSavingDataLoop() {
 // 碎片
 func (db *DB) autoSavingSpaceLoop() {
     for !db.isClosed() {
-        if db.isCacheEnabled() {
+        //if db.isCacheEnabled() {
             db.autoSyncFileSpace()
-        }
+        //}
         time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
     }
 }
@@ -69,7 +39,7 @@ func (db *DB) sync() {
 }
 
 func (db *DB) autoSyncMemtable() {
-    key := "memtable_sync_cache_key_for_" + db.path + db.name
+    key := "auto_sync_memtable_cache_key_for_" + db.path + db.name
     if gcache.Get(key) != nil {
         return
     }
@@ -80,7 +50,7 @@ func (db *DB) autoSyncMemtable() {
 }
 
 func (db *DB) autoSyncFileSpace() {
-    key := "filespace_sync_cache_key_for_" + db.path + db.name
+    key := "auto_sync_filespace_cache_key_for_" + db.path + db.name
     if gcache.Get(key) != nil {
         return
     }
