@@ -1,12 +1,12 @@
 Go语言开发的基于DRH(Deep-Re-Hash)深度哈希分区算法的高性能Key-Value嵌入式数据库。
 
-#安装
+# 安装
 ```
 go get gitee.com/johng/gf
 go get gitee.com/johng/gkvdb
 ````
 
-#使用
+# 使用
 ```go
 // 创建数据库
 db, err := gkvdb.New("/tmp/gkvdb", "test")
@@ -39,5 +39,5 @@ db.SetCache(false)
 ```
 
 
-#文档
+# 文档
 [参见官网](http://johng.cn/gkvdb/)
