@@ -5,8 +5,6 @@ import (
     "g/util/gtime"
     "./gkvdb"
     "strconv"
-    "os"
-    "time"
 )
 
 var db *gkvdb.DB
@@ -81,7 +79,6 @@ func TestGetWithoutCache(count int) {
         key := []byte("key_" + strconv.Itoa(i))
         if r := db.Get(key); r == nil {
             fmt.Println("TestGetWithoutCache value not found for index:", i)
-            os.Exit(1)
         }
     }
     fmt.Println("TestGetWithoutCache:", gtime.Microsecond() - t)
@@ -101,21 +98,28 @@ func TestRemoveWithoutCache(count int) {
 }
 
 func main() {
-    //var count int = 0
+    var count int = 0
 
     //
     // ==================不带缓存的KV操作=======================
     // 100W性能测试
-    //fmt.Println("=======================================100W without cache=======================================")
-    //for i := 0; i < 100000; i++ {
-    //    count = 100000
-        //TestSetWithoutCache(count)
-        //TestGetWithoutCache(count)
-        //TestRemoveWithoutCache(100)
-        //TestRemoveWithoutCache(1000)
+    fmt.Println("=======================================100W without cache=======================================")
+    count = 1000000
+    TestSetWithoutCache(count)
+    TestGetWithoutCache(count)
+    TestRemoveWithoutCache(count)
+    //
+    //if err := db.Remove([]byte("key_" + strconv.Itoa(1))); err != nil {
+    //    fmt.Println(err)
     //}
-
-
+    //
+    //if err := db.Remove([]byte("key_" + strconv.Itoa(10))); err != nil {
+    //    fmt.Println(err)
+    //}
+    //
+    //if err := db.Remove([]byte("key_" + strconv.Itoa(80))); err != nil {
+    //    fmt.Println(err)
+    //}
     // 500W性能测试
     //fmt.Println("=======================================500W without cache=======================================")
     //count = 5000000
@@ -153,14 +157,19 @@ func main() {
     //TestGetWithCache(count)
     //TestRemoveWithCache(count)
 
-    gtime.SetInterval(time.Second, func() bool {
-        db.PrintState()
-        return true
-    })
 
 
-    //db.PrintState()
-    select {
 
-    }
+
+
+    //gtime.SetInterval(time.Second, func() bool {
+    //    db.PrintState()
+    //    return true
+    //})
+    //
+    ////db.PrintState()
+    //
+    //select {
+    //
+    //}
 }

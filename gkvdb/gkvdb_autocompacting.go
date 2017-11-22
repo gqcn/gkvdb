@@ -33,7 +33,7 @@ func (db *DB) autoCompactingData() {
     defer db.mu.Unlock()
 
     maxsize := db.getDbFileSpaceMaxSize()
-    if maxsize == 0 {
+    if maxsize < gAUTO_COMPACTING_MINSIZE {
         return
     }
     index := db.getDbFileSpace(maxsize)
@@ -61,6 +61,8 @@ func (db *DB) autoCompactingData() {
             if err := db.getIndexInfoByRecord(record); err == nil {
                 if record.meta.end > 0 {
                     if err := db.getDataInfoByRecord(record); err == nil {
+                        record.data.start -= int64(maxsize)
+                        record.data.cap   += maxsize
                         db.updateDataByRecord(record)
                         db.updateMetaByRecord(record)
                         db.updateIndexByRecord(record)
@@ -84,7 +86,7 @@ func (db *DB) autoCompactingMeta() {
     defer db.mu.Unlock()
 
     maxsize := db.getMtFileSpaceMaxSize()
-    if maxsize == 0 {
+    if maxsize < gAUTO_COMPACTING_MINSIZE {
         return
     }
     index := db.getMtFileSpace(maxsize)

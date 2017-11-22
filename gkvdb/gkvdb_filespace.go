@@ -5,19 +5,21 @@ import (
     "g/encoding/gbinary"
     "g/os/gfilespace"
     "sync"
-    //"fmt"
-    "fmt"
 )
 
 // 初始化碎片管理器
 func (db *DB) initFileSpace() {
     db.mtsp = gfilespace.New()
     db.dbsp = gfilespace.New()
-    db.recountFileSpace()
+    go db.recountFileSpace()
 }
 
 // 重新计算空间碎片信息
+// 必须锁起来防止数据变动引起计算不准确从而影响数据正确性
 func (db *DB) recountFileSpace() {
+    db.mu.Lock()
+    defer db.mu.Unlock()
+
     mtpf, _ := db.mtfp.File()
     defer mtpf.Close()
 
@@ -112,8 +114,8 @@ func (db *DB) recountFileSpace() {
     //fmt.Println("used mtsp:", len(usedmtsp.GetAllBlocks()))
     //fmt.Println("used dbsp:", len(useddbsp.GetAllBlocks()))
 
-    fmt.Println("mtsp:", len(db.mtsp.GetAllBlocks()))
-    fmt.Println("dbsp:", len(db.dbsp.GetAllBlocks()))
+    //fmt.Println("mtsp:", len(db.mtsp.GetAllBlocks()))
+    //fmt.Println("dbsp:", len(db.dbsp.GetAllBlocks()))
     //fmt.Println("time:", gtime.Microsecond() - t)
     //
     //os.Exit(1)

@@ -31,14 +31,13 @@ const (
     gMETA_ITEM_SIZE          = 17                       // 元数据单项大小(byte)
     gMAX_META_LIST_SIZE      = 65535*gMETA_ITEM_SIZE    // 阶数，元数据列表最大大小(byte)
     gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小(byte)
-    //gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
-    gMETA_BUCKET_SIZE        = 1*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
-    //gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
-    gDATA_BUCKET_SIZE        = 4                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
     gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
-    gAUTO_COMPACTING_TIMEOUT = 10                     // 自动进行数据整理的时间(毫秒)
+    gAUTO_COMPACTING_MINSIZE = 1024                     // 当空闲块大小>=该大小时，对其进行数据整理
+    gAUTO_COMPACTING_TIMEOUT = 1000                     // 自动进行数据整理的时间(毫秒)
 )
 
 // KV数据库
