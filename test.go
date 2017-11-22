@@ -3,7 +3,7 @@ package main
 import (
     "fmt"
     "g/util/gtime"
-    "./gkvdb"
+    "gkvdb"
     "strconv"
 )
 
