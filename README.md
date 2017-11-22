@@ -41,4 +41,5 @@ db.SetCache(false)
 
 
 # 文档
-[参见官网](http://johng.cn/gkvdb/)
+1. [gkvdb的介绍及设计](http://johng.cn/gkvdb-brief/)
+1. [gkvdb的性能测试](http://johng.cn/gkvdb-performance-test/)
