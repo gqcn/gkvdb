@@ -37,7 +37,7 @@ const (
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
     gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 1024                     // 当空闲块大小>=该大小时，对其进行数据整理
-    gAUTO_COMPACTING_TIMEOUT = 1000                     // 自动进行数据整理的时间(毫秒)
+    gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
 )
 
 // KV数据库
