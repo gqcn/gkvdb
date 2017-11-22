@@ -2,11 +2,11 @@
 package gkvdb
 
 import (
-    "time"
     "g/os/gfile"
     "os"
     "g/encoding/gbinary"
     "g/os/gcache"
+    "time"
 )
 
 // 数据迁移处理
@@ -55,13 +55,12 @@ func (db *DB) autoCompactingData() {
             key  := buffer[1 : 1 + klen]
             record := &Record {
                 hash64  : uint(db.getHash64(key)),
+                key     : key,
             }
             // 查找对应的索引信息，并执行更新
             if err := db.getIndexInfoByRecord(record); err == nil {
                 if record.meta.end > 0 {
                     if err := db.getDataInfoByRecord(record); err == nil {
-                        record.data.start -= int64(maxsize)
-                        record.data.cap   += maxsize
                         db.updateDataByRecord(record)
                         db.updateMetaByRecord(record)
                         db.updateIndexByRecord(record)
@@ -102,8 +101,8 @@ func (db *DB) autoCompactingMeta() {
             return
         }
         defer mtpf.Close()
-        // 找到对应空闲块下一条meta数据
-        if buffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtstart, mtstart + gMETA_BUCKET_SIZE); buffer != nil {
+        // 找到对应空闲块下一条meta item数据
+        if buffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtstart, mtstart + gMETA_ITEM_SIZE); buffer != nil {
             bits   := gbinary.DecodeBytesToBits(buffer)
             hash64 := gbinary.DecodeBits(bits[0 : 64])
             record := &Record {
@@ -111,9 +110,14 @@ func (db *DB) autoCompactingMeta() {
             }
             // 查找对应的索引信息，并执行更新
             if err := db.getIndexInfoByRecord(record); err == nil {
-                record.meta.start -= int64(maxsize)
-                record.meta.cap   += maxsize
-                db.updateIndexByRecord(record)
+                if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), record.meta.start, record.meta.end); mtbuffer != nil {
+                    record.meta.start -= int64(maxsize)
+                    record.meta.cap   += maxsize
+                    if _, err = mtpf.File().WriteAt(mtbuffer, record.meta.start); err == nil {
+                        db.updateIndexByRecord(record)
+                        db.checkAndResizeMtCap(record)
+                    }
+                }
             }
         }
     }

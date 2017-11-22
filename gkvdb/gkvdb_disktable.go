@@ -11,7 +11,6 @@ import (
 // 同步数据到磁盘
 func (db *DB) sync() {
     db.memt.sync()
-    db.saveFileSpace()
 }
 
 // 查询

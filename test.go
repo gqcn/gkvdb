@@ -5,14 +5,16 @@ import (
     "g/util/gtime"
     "./gkvdb"
     "strconv"
+    "os"
     "time"
 )
 
 var db *gkvdb.DB
 
 func init() {
-    r, _ := gkvdb.New("/tmp/gkvdb", "test")
-    db = r
+    t := gtime.Microsecond()
+    db, _ = gkvdb.New("/tmp/gkvdb", "test")
+    fmt.Println("db init:", gtime.Microsecond() - t)
 }
 
 // 测试默认带缓存情况下的数据库写入
@@ -79,6 +81,7 @@ func TestGetWithoutCache(count int) {
         key := []byte("key_" + strconv.Itoa(i))
         if r := db.Get(key); r == nil {
             fmt.Println("TestGetWithoutCache value not found for index:", i)
+            os.Exit(1)
         }
     }
     fmt.Println("TestGetWithoutCache:", gtime.Microsecond() - t)
@@ -98,16 +101,21 @@ func TestRemoveWithoutCache(count int) {
 }
 
 func main() {
-    var count int = 0
+    //var count int = 0
 
     //
     // ==================不带缓存的KV操作=======================
     // 100W性能测试
     //fmt.Println("=======================================100W without cache=======================================")
-    count = 100000
-    TestSetWithoutCache(count)
-    TestGetWithoutCache(count)
-    TestRemoveWithoutCache(count)
+    //for i := 0; i < 100000; i++ {
+    //    count = 100000
+        //TestSetWithoutCache(count)
+        //TestGetWithoutCache(count)
+        //TestRemoveWithoutCache(100)
+        //TestRemoveWithoutCache(1000)
+    //}
+
+
     // 500W性能测试
     //fmt.Println("=======================================500W without cache=======================================")
     //count = 5000000
@@ -145,11 +153,14 @@ func main() {
     //TestGetWithCache(count)
     //TestRemoveWithCache(count)
 
+    gtime.SetInterval(time.Second, func() bool {
+        db.PrintState()
+        return true
+    })
 
-    time.Sleep(time.Second)
-    db.PrintState()
 
-    //select {
-    //
-    //}
+    //db.PrintState()
+    select {
+
+    }
 }

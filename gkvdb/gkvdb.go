@@ -31,12 +31,14 @@ const (
     gMETA_ITEM_SIZE          = 17                       // 元数据单项大小(byte)
     gMAX_META_LIST_SIZE      = 65535*gMETA_ITEM_SIZE    // 阶数，元数据列表最大大小(byte)
     gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小(byte)
-    gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
-    gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    //gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    gMETA_BUCKET_SIZE        = 1*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    //gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    gDATA_BUCKET_SIZE        = 4                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
     gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
-    gAUTO_COMPACTING_TIMEOUT = 5000                     // 自动进行数据整理的时间(毫秒)
+    gAUTO_COMPACTING_TIMEOUT = 10                     // 自动进行数据整理的时间(毫秒)
 )
 
 // KV数据库
@@ -51,7 +53,6 @@ type DB struct {
     mtsp    *gfilespace.Space // 元数据文件碎片管理
     dbsp    *gfilespace.Space // 数据文件碎片管理器
     memt    *MemTable         // MemTable
-    fsdirty int32             // 碎片是否可写
     cached  int32             // 是否开启缓存功能(可动态开启/关闭)
     closed  int32             // 数据库是否关闭，以便异步线程进行判断处理
 }
@@ -144,11 +145,10 @@ func New(path, name string) (*DB, error) {
         gfile.PutBinContents(ixpath, make([]byte, gINDEX_BUCKET_SIZE*gDEFAULT_PART_SIZE))
     }
 
-    // 初始化相关服务及数据
+    // 初始化相关服务
     db.initFileSpace()
-    db.restoreFileSpace()
     db.startAutoSavingLoop()
-    //db.startAutoCompactingLoop()
+    db.startAutoCompactingLoop()
     return db, nil
 }
 
