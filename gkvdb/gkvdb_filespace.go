@@ -1,9 +1,9 @@
 package gkvdb
 
 import (
-    "g/os/gfile"
-    "g/encoding/gbinary"
-    "g/os/gfilespace"
+    "gf/g/os/gfile"
+    "gf/g/encoding/gbinary"
+    "gf/g/os/gfilespace"
     "sync"
 )
 

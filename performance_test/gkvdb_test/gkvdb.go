@@ -2,7 +2,7 @@ package main
 
 import (
     "fmt"
-    "g/util/gtime"
+    "gf/g/util/gtime"
     "strconv"
     "gkvdb"
 )

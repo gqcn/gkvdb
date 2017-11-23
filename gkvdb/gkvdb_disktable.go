@@ -1,10 +1,10 @@
 package gkvdb
 
 import (
-    "g/os/gcache"
+    "gf/g/os/gcache"
     "errors"
-    "g/os/gfile"
-    "g/encoding/gbinary"
+    "gf/g/os/gfile"
+    "gf/g/encoding/gbinary"
     "bytes"
 )
 

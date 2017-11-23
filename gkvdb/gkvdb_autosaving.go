@@ -3,7 +3,7 @@ package gkvdb
 
 import (
     "time"
-    "g/os/gcache"
+    "gf/g/os/gcache"
 )
 
 // 自动保存线程循环

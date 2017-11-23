@@ -12,13 +12,13 @@ package gkvdb
 
 import (
     "os"
-    "g/os/gfile"
+    "gf/g/os/gfile"
     "strings"
-    "g/encoding/gbinary"
-    "g/os/gfilepool"
+    "gf/g/encoding/gbinary"
+    "gf/g/os/gfilepool"
     "errors"
-    "g/encoding/ghash"
-    "g/os/gfilespace"
+    "gf/g/encoding/ghash"
+    "gf/g/os/gfilespace"
     "sync"
     "sync/atomic"
     "bytes"

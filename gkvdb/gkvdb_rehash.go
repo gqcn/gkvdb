@@ -1,7 +1,7 @@
 package gkvdb
 
 import (
-    "g/encoding/gbinary"
+    "gf/g/encoding/gbinary"
 )
 
 // 对数据库对应元数据列表进行重复分区

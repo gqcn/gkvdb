@@ -2,13 +2,14 @@ Go语言开发的基于DRH(Deep-Re-Hash)深度哈希分区算法的高性能Key-
 
 # 安装
 ```
-go get gitee.com/johng/gf
-go get gitee.com/johng/gkvdb
+go get -u gitee.com/johng/gf
 ````
 
 
 # 使用
 ```go
+import "gitee.com/johng/gkvdb/gkvdb"
+
 // 创建数据库
 db, err := gkvdb.New("/tmp/gkvdb", "test")
 if err != nil {
