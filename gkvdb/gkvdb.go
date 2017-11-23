@@ -18,10 +18,10 @@ import (
     "sync/atomic"
     "bytes"
     "gitee.com/johng/gf/g/os/gfile"
-    "gitee.com/johng/gf/g/encoding/gbinary"
     "gitee.com/johng/gf/g/os/gfilepool"
-    "gitee.com/johng/gf/g/encoding/ghash"
     "gitee.com/johng/gf/g/os/gfilespace"
+    "gitee.com/johng/gf/g/encoding/ghash"
+    "gitee.com/johng/gf/g/encoding/gbinary"
 )
 
 const (
@@ -97,9 +97,6 @@ type Record struct {
 // 创建一个KV数据库
 func New(path, name string) (*DB, error) {
     path = strings.TrimRight(path, gfile.Separator)
-    if name == "" {
-        name = "gkvdb"
-    }
     if !gfile.Exists(path) {
         if err := gfile.Mkdir(path); err != nil {
             return nil, err

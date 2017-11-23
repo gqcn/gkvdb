@@ -97,74 +97,16 @@ func main() {
 
     //
     // ==================不带缓存的KV操作=======================
-    // 100W性能测试
-    fmt.Println("=======================================100W without cache=======================================")
-    count = 1000000
-    TestSetWithoutCache(count)
-    TestGetWithoutCache(count)
-    TestRemoveWithoutCache(count)
-    //
-    //if err := db.Remove([]byte("key_" + strconv.Itoa(1))); err != nil {
-    //    fmt.Println(err)
-    //}
-    //
-    //if err := db.Remove([]byte("key_" + strconv.Itoa(10))); err != nil {
-    //    fmt.Println(err)
-    //}
-    //
-    //if err := db.Remove([]byte("key_" + strconv.Itoa(80))); err != nil {
-    //    fmt.Println(err)
-    //}
-    // 500W性能测试
-    //fmt.Println("=======================================500W without cache=======================================")
-    //count = 5000000
+    //count = 10000
     //TestSetWithoutCache(count)
     //TestGetWithoutCache(count)
     //TestRemoveWithoutCache(count)
-    //// 1000W性能测试
-    //fmt.Println("=======================================1000W without cache=======================================")
-    //count = 10000000
-    //TestSetWithoutCache(count)
-    //TestGetWithoutCache(count)
-    //TestRemoveWithoutCache(count)
-
-
-
 
     // ==================带缓存的KV操作=======================
     // 100W性能测试
-    //fmt.Println("=======================================100W with cache=======================================")
-    //count  = 1000000
+    count  = 10000
     //TestSetWithCache(count)
     //TestGetWithCache(count)
-    //TestRemoveWithCache(count)
+    TestRemoveWithCache(count)
 
-    // 500W性能测试
-    //fmt.Println("=======================================500W with cache=======================================")
-    //count  = 5000000
-    //TestSetWithCache(count)
-    //TestGetWithCache(count)
-    //TestRemoveWithCache(count)
-    //// 1000W性能测试
-    //fmt.Println("=======================================1000W with cache=======================================")
-    //count  = 10000000
-    //TestSetWithCache(count)
-    //TestGetWithCache(count)
-    //TestRemoveWithCache(count)
-
-
-
-
-
-
-    //gtime.SetInterval(time.Second, func() bool {
-    //    db.PrintState()
-    //    return true
-    //})
-    //
-    ////db.PrintState()
-    //
-    //select {
-    //
-    //}
 }
