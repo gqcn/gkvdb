@@ -50,7 +50,6 @@ func (db *DB) set(key []byte, value []byte) error {
     if err := db.insertDataByRecord(record); err != nil {
         return errors.New("inserting data error: " + err.Error())
     }
-
     return nil
 }
 

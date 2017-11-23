@@ -5,6 +5,7 @@ import (
     "strconv"
     "gkvdb/gkvdb"
     "gitee.com/johng/gf/g/util/gtime"
+    "time"
 )
 
 var db *gkvdb.DB
@@ -103,11 +104,11 @@ func main() {
     //
     // ==================不带缓存的KV操作=======================
     // 100W性能测试
-    fmt.Println("=======================================100W without cache=======================================")
-    count = 10
-    TestSetWithoutCache(count)
-    TestGetWithoutCache(count)
-    TestRemoveWithoutCache(count)
+    //fmt.Println("=======================================100W without cache=======================================")
+    //count = 1000000
+    //TestSetWithoutCache(count)
+    //TestGetWithoutCache(count)
+    //TestRemoveWithoutCache(count)
     //
     //if err := db.Remove([]byte("key_" + strconv.Itoa(1))); err != nil {
     //    fmt.Println(err)
@@ -138,11 +139,11 @@ func main() {
 
     // ==================带缓存的KV操作=======================
     // 100W性能测试
-    //fmt.Println("=======================================100W with cache=======================================")
-    //count  = 1000000
-    //TestSetWithCache(count)
-    //TestGetWithCache(count)
-    //TestRemoveWithCache(count)
+    fmt.Println("=======================================100W with cache=======================================")
+    count  = 1000000
+    TestSetWithCache(count)
+    TestGetWithCache(count)
+    TestRemoveWithCache(count)
 
     // 500W性能测试
     //fmt.Println("=======================================500W with cache=======================================")
@@ -162,14 +163,14 @@ func main() {
 
 
 
-    //gtime.SetInterval(time.Second, func() bool {
-    //    db.PrintState()
-    //    return true
-    //})
+    gtime.SetInterval(time.Second, func() bool {
+        db.PrintState()
+        return true
+    })
     //
     ////db.PrintState()
     //
-    //select {
-    //
-    //}
+    select {
+
+    }
 }

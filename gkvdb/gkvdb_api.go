@@ -1,5 +1,7 @@
 package gkvdb
 
+import "fmt"
+
 // 设置是否开启缓存
 func (db *DB) SetCache(enabled bool) {
     if enabled {
@@ -88,11 +90,6 @@ func (db *DB) Values(max int) [][]byte {
 //    fmt.Println("       list:", dbblocks)
 //
 //    fmt.Println("=======================================")
-//}
-
-//// 获取所有的碎片(调试使用)
-//func (db *DB) GetBlocks() []gfilespace.Block {
-//    return db.mtsp.GetAllBlocks()
 //}
 
 
