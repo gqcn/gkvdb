@@ -2,7 +2,7 @@ package main
 
 import (
     "fmt"
-    "gf/g/util/gtime"
+    "gitee.com/johng/gf/g/util/gtime"
     "strconv"
     "github.com/syndtr/goleveldb/leveldb"
     "github.com/syndtr/goleveldb/leveldb/opt"

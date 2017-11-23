@@ -12,16 +12,16 @@ package gkvdb
 
 import (
     "os"
-    "gf/g/os/gfile"
     "strings"
-    "gf/g/encoding/gbinary"
-    "gf/g/os/gfilepool"
     "errors"
-    "gf/g/encoding/ghash"
-    "gf/g/os/gfilespace"
     "sync"
     "sync/atomic"
     "bytes"
+    "gitee.com/johng/gf/g/os/gfile"
+    "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/os/gfilepool"
+    "gitee.com/johng/gf/g/encoding/ghash"
+    "gitee.com/johng/gf/g/os/gfilespace"
 )
 
 const (

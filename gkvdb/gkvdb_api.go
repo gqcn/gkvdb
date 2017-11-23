@@ -1,9 +1,5 @@
 package gkvdb
 
-import (
-    "fmt"
-)
-
 // 设置是否开启缓存
 func (db *DB) SetCache(enabled bool) {
     if enabled {

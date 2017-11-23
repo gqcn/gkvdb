@@ -1,7 +1,7 @@
 package gkvdb
 
 import (
-    "gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/encoding/gbinary"
 )
 
 // 对数据库对应元数据列表进行重复分区

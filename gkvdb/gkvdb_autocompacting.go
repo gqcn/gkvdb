@@ -2,10 +2,10 @@
 package gkvdb
 
 import (
-    "gf/g/os/gfile"
+    "gitee.com/johng/gf/g/os/gfile"
     "os"
-    "gf/g/encoding/gbinary"
-    "gf/g/os/gcache"
+    "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/os/gcache"
     "time"
 )
 

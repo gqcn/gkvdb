@@ -1,9 +1,9 @@
 package gkvdb
 
 import (
-    "gf/g/os/gfile"
-    "gf/g/encoding/gbinary"
-    "gf/g/os/gfilespace"
+    "gitee.com/johng/gf/g/os/gfile"
+    "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/os/gfilespace"
     "sync"
 )
 
