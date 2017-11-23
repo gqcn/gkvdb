@@ -1,11 +1,9 @@
-package gkvdb
+package main
 
 import (
     "fmt"
     "g/util/gtime"
     "strconv"
-
-    "gitee.com/johng/gkvdb/src/gkvdb"
 )
 
 var db *gkvdb.DB
