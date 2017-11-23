@@ -8,7 +8,7 @@ go get -u gitee.com/johng/gkvdb
 
 
 # 使用
-1. 基本用法
+#### 基本用法
 ```go
 import "gitee.com/johng/gkvdb/gkvdb"
 
@@ -40,7 +40,7 @@ db.Close()
 ```
 
 
-1. 开启/关闭缓存
+#### 开启/关闭缓存
 ```go
 // 启用缓存
 db.SetCache(true)
@@ -50,7 +50,7 @@ db.SetCache(false)
 ```
 
 
-1. 特殊写入操作
+#### 特殊写入操作
 ```go
 // 无论缓存是否开启，直接写入数据到磁盘
 key   := []byte("name")
@@ -61,7 +61,7 @@ if err := db.SetWithoutCache(key, value); err != nil {
 ```
 
 
-1. 键值对随机遍历
+#### 键值对随机遍历
 ```go
 // 随机获取10条数据
 fmt.Println(db.Items(10))
