@@ -12,7 +12,7 @@ go get -u gitee.com/johng/gkvdb
 ```go
 import "gitee.com/johng/gkvdb/gkvdb"
 
-// 创建数据库
+// 创建数据库，指定数据库存放目录，数据库名称
 db, err := gkvdb.New("/tmp/gkvdb", "test")
 if err != nil {
     fmt.Println(err)
@@ -26,11 +26,11 @@ if err := db.Set(key, value); err != nil {
 }
 
 // 查询数据
-key   := []byte("john")
+key   := []byte("name")
 fmt.Println(db.Get(key))
 
 // 删除数据
-key   := []byte("john")
+key   := []byte("name")
 if err := db.Remove(key); err != nil {
     fmt.Println(err)
 }
