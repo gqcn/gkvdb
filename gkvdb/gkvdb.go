@@ -12,11 +12,11 @@ package gkvdb
 
 import (
     "os"
+    "bytes"
     "strings"
     "errors"
     "sync"
     "sync/atomic"
-    "bytes"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gfilepool"
     "gitee.com/johng/gf/g/os/gfilespace"
@@ -71,7 +71,7 @@ type Meta struct {
     size   int    // 列表真实长度(byte)
     buffer []byte // 数据项列表([]byte)
     match  int    // 是否在查找中匹配结果(-2, -1, 0, 1)
-    index  int    // (匹配时有效, match=true)列表匹配的索引位置
+    index  int    // (匹配时有效, match=0)列表匹配的索引位置
 }
 
 // 数据项
@@ -118,7 +118,6 @@ func New(path, name string) (*DB, error) {
     ixpath := db.getIndexFilePath()
     mtpath := db.getMetaFilePath()
     dbpath := db.getDataFilePath()
-    fspath := db.getSpaceFilePath()
     if gfile.Exists(ixpath) && (!gfile.IsWritable(ixpath) || !gfile.IsReadable(ixpath)){
         return nil, errors.New("permission denied to index file: " + ixpath)
     }
@@ -127,9 +126,6 @@ func New(path, name string) (*DB, error) {
     }
     if gfile.Exists(dbpath) && (!gfile.IsWritable(dbpath) || !gfile.IsReadable(dbpath)){
         return nil, errors.New("permission denied to data file: " + dbpath)
-    }
-    if gfile.Exists(fspath) && (!gfile.IsWritable(fspath) || !gfile.IsReadable(fspath)){
-        return nil, errors.New("permission denied to space file: " + fspath)
     }
 
     // 创建文件指针池
@@ -160,10 +156,6 @@ func (db *DB) getDataFilePath() string {
     return db.path + gfile.Separator + db.name + ".db"
 }
 
-func (db *DB) getSpaceFilePath() string {
-    return db.path + gfile.Separator + db.name + ".fs"
-}
-
 func (db *DB) isCacheEnabled() bool {
     return atomic.LoadInt32(&db.cached) > 0
 }
@@ -172,6 +164,7 @@ func (db *DB) setCache(v int32) {
     atomic.StoreInt32(&db.cached, v)
 }
 
+// 关闭数据库链接，释放资源
 func (db *DB) close() {
     db.ixfp.Close()
     db.mtfp.Close()

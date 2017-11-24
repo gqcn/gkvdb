@@ -1,10 +1,10 @@
 package gkvdb
 
 import (
-    "gitee.com/johng/gf/g/core/types/gmap"
     "strconv"
     "errors"
     "gitee.com/johng/gf/g/encoding/ghash"
+    "gitee.com/johng/gf/g/core/types/gmap"
 )
 
 // 用于磁盘与接口之间的数据缓冲层，异步线程将会定期同步到磁盘

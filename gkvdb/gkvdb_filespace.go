@@ -1,10 +1,10 @@
 package gkvdb
 
 import (
-    "gitee.com/johng/gf/g/os/gfile"
-    "gitee.com/johng/gf/g/encoding/gbinary"
-    "gitee.com/johng/gf/g/os/gfilespace"
     "sync"
+    "gitee.com/johng/gf/g/os/gfile"
+    "gitee.com/johng/gf/g/os/gfilespace"
+    "gitee.com/johng/gf/g/encoding/gbinary"
 )
 
 // 初始化碎片管理器

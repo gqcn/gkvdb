@@ -2,11 +2,11 @@
 package gkvdb
 
 import (
-    "gitee.com/johng/gf/g/os/gfile"
     "os"
-    "gitee.com/johng/gf/g/encoding/gbinary"
-    "gitee.com/johng/gf/g/os/gcache"
     "time"
+    "gitee.com/johng/gf/g/os/gfile"
+    "gitee.com/johng/gf/g/os/gcache"
+    "gitee.com/johng/gf/g/encoding/gbinary"
 )
 
 // 数据迁移处理

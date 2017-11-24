@@ -16,7 +16,7 @@ func (db *DB) checkDeepRehash(record *Record) error {
     // 计算分区增量，保证数据散列(分区后在同一请求处理中不再进行二次分区)
     // 分区增量必须为奇数，保证分区数据分配均匀
     inc := gDEFAULT_PART_SIZE + record.index.inc + 1
-    if inc%2 != 0 {
+    if inc%2 == 0 {
         inc++
     }
     pmap := make(map[int][]byte)

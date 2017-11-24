@@ -1,11 +1,11 @@
 package gkvdb
 
 import (
-    "gitee.com/johng/gf/g/os/gcache"
+    "bytes"
     "errors"
     "gitee.com/johng/gf/g/os/gfile"
+    "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
-    "bytes"
 )
 
 // 同步数据到磁盘
