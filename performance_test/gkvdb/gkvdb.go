@@ -3,7 +3,7 @@ package main
 import (
     "fmt"
     "strconv"
-    "gkvdb/gkvdb"
+    "gitee.com/johng/gkvdb/gkvdb"
     "gitee.com/johng/gf/g/util/gtime"
 )
 
@@ -104,7 +104,7 @@ func main() {
     // ==================不带缓存的KV操作=======================
     // 100W性能测试
     fmt.Println("=======================================100W without cache=======================================")
-    count = 1000000
+    count = 10
     TestSetWithoutCache(count)
     TestGetWithoutCache(count)
     TestRemoveWithoutCache(count)
