@@ -3,9 +3,10 @@
 // 数据结构要点   ：数据的分配长度cap >= 数据真实长度len，且 cap - len <= bucket，
 //               当数据存储内容发生改变时，依靠碎片管理器对碎片进行回收再利用，且碎片大小 >= bucket
 
-// 索引文件结构  ：元数据文件偏移量倍数(36bit,64GB*元数据桶大小)|下一层级索引的文件偏移量倍数(重复分区标志位=1时有效) 元数据文件列表项大小(19bit,524287)|分区增量 深度分区标识符(1bit)
-// 元数据文件结构 :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长,链表)
-// 数据文件结构  ：键名长度(8bit) 键名(变长) 键值(变长)
+// 索引文件结构   ：元数据文件偏移量倍数(36bit,64GB*元数据桶大小)|下一层级索引的文件偏移量倍数(重复分区标志位=1时有效) 元数据文件列表项大小(19bit,524287)|分区增量 深度分区标识符(1bit)
+// 元数据文件结构  :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长)
+// 数据文件结构   ：[键名长度(8bit) 键名 键值](变长)
+// BinLog文件结构：[键名长度(8bit) 键值长度(24bit,16MB) 键名 键值 ](变长)
 
 
 package gkvdb
@@ -49,6 +50,8 @@ type DB struct {
     ixfp    *gfilepool.Pool   // 索引文件打开指针池(用以高并发下的IO复用)
     mtfp    *gfilepool.Pool   // 元数据文件打开指针池(元数据，包含索引信息和部分数据信息)
     dbfp    *gfilepool.Pool   // 数据文件打开指针池
+    blfp    *gfilepool.Pool   // binlog文件打开指针池
+
     mtsp    *gfilespace.Space // 元数据文件碎片管理
     dbsp    *gfilespace.Space // 数据文件碎片管理器
     memt    *MemTable         // MemTable
@@ -118,6 +121,7 @@ func New(path, name string) (*DB, error) {
     ixpath := db.getIndexFilePath()
     mtpath := db.getMetaFilePath()
     dbpath := db.getDataFilePath()
+    blpath := db.getBinLogFilePath()
     if gfile.Exists(ixpath) && (!gfile.IsWritable(ixpath) || !gfile.IsReadable(ixpath)){
         return nil, errors.New("permission denied to index file: " + ixpath)
     }
@@ -127,11 +131,16 @@ func New(path, name string) (*DB, error) {
     if gfile.Exists(dbpath) && (!gfile.IsWritable(dbpath) || !gfile.IsReadable(dbpath)){
         return nil, errors.New("permission denied to data file: " + dbpath)
     }
+    if gfile.Exists(blpath) && (!gfile.IsWritable(blpath) || !gfile.IsReadable(blpath)){
+        return nil, errors.New("permission denied to bin log file: " + blpath)
+    }
 
     // 创建文件指针池
     db.ixfp = gfilepool.New(ixpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
     db.mtfp = gfilepool.New(mtpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
     db.dbfp = gfilepool.New(dbpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
+    db.blfp = gfilepool.New(blpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
+
     // 初始化索引文件内容
     if gfile.Size(ixpath) == 0 {
         gfile.PutBinContents(ixpath, make([]byte, gINDEX_BUCKET_SIZE*gDEFAULT_PART_SIZE))
@@ -154,6 +163,10 @@ func (db *DB) getMetaFilePath() string {
 
 func (db *DB) getDataFilePath() string {
     return db.path + gfile.Separator + db.name + ".db"
+}
+
+func (db *DB) getBinLogFilePath() string {
+    return db.path + gfile.Separator + db.name + ".bl"
 }
 
 func (db *DB) isCacheEnabled() bool {

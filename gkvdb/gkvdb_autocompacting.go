@@ -1,4 +1,3 @@
-// 自动迁移数据,去掉无用空间的goroutine
 package gkvdb
 
 import (
@@ -9,7 +8,7 @@ import (
     "gitee.com/johng/gf/g/encoding/gbinary"
 )
 
-// 数据迁移处理
+// 数据文件自动整理
 func (db *DB) startAutoCompactingLoop() {
     go func() {
         for !db.isClosed() {
