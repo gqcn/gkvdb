@@ -1,13 +1,9 @@
 package gkvdb
 
-// 设置是否开启缓存
-func (db *DB) SetCache(enabled bool) {
-    if enabled {
-        db.setCache(1)
-    } else {
-        db.setCache(0)
-    }
-}
+import (
+    "errors"
+    "strconv"
+)
 
 // 关闭数据库链接
 func (db *DB) Close() {
@@ -24,29 +20,35 @@ func (db *DB) Get(key []byte) []byte {
 
 // 设置KV数据
 func (db *DB) Set(key []byte, value []byte) error {
-    if db.isCacheEnabled() {
-        if err := db.memt.set(key, value); err != nil {
-            return err
-        }
-        return nil
+    if len(key) > gMAX_KEY_SIZE {
+        return errors.New("too large key size, max allowed: " + strconv.Itoa(gMAX_KEY_SIZE) + " bytes")
     }
-    return db.set(key, value)
+    if len(value) > gMAX_VALUE_SIZE {
+        return errors.New("too large value size, max allowed: " + strconv.Itoa(gMAX_VALUE_SIZE) + " bytes")
+    }
+    // 先写binlog
+    tx := db.Begin()
+    tx.Set(key, value)
+    if err := tx.Commit(); err != nil {
+        return err
+    }
+    // 再写内存表
+    return db.memt.set(tx)
 }
 
 // 删除KV数据
 func (db *DB) Remove(key []byte) error {
-    if db.isCacheEnabled() {
-        if err := db.memt.remove(key); err != nil {
-            return err
-        }
-        return nil
+    if len(key) > gMAX_KEY_SIZE {
+        return errors.New("too large key size, max allowed: " + strconv.Itoa(gMAX_KEY_SIZE) + " bytes")
     }
-    return db.remove(key)
-}
-
-// 设置KV数据(强制不使用缓存)
-func (db *DB) SetWithoutCache(key []byte, value []byte) error {
-    return db.set(key, value)
+    // 先写binlog
+    tx := db.Begin()
+    tx.Remove(key)
+    if err := tx.Commit(); err != nil {
+        return err
+    }
+    // 再写内存表
+    return db.memt.set(tx)
 }
 
 // 获取max条随机键值对，max=-1时获取所有数据返回

@@ -3,11 +3,14 @@
 // 数据结构要点   ：数据的分配长度cap >= 数据真实长度len，且 cap - len <= bucket，
 //               当数据存储内容发生改变时，依靠碎片管理器对碎片进行回收再利用，且碎片大小 >= bucket
 
-// 索引文件结构   ：元数据文件偏移量倍数(36bit,64GB*元数据桶大小)|下一层级索引的文件偏移量倍数(重复分区标志位=1时有效) 元数据文件列表项大小(19bit,524287)|分区增量 深度分区标识符(1bit)
-// 元数据文件结构  :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长)
-// 数据文件结构   ：[键名长度(8bit) 键名 键值](变长)
-// BinLog文件结构：[键名长度(8bit) 键值长度(24bit,16MB) 键名 键值 ](变长)
-
+// 索引文件结构    ：元数据文件偏移量倍数(36bit,64GB*元数据桶大小)|下一层级索引的文件偏移量倍数(重复分区标志位=1时有效) 元数据文件列表项大小(19bit,524287)|分区增量 深度分区标识符(1bit)
+// 元数据文件结构   :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长)
+// 数据文件结构    ：[键名长度(8bit) 键名 键值](变长)
+// BinLog文件结构 ：
+// [是否同步(8bit) 数据长度(32bit) 事务编号(64bit)] -- 事务开始
+// [键名长度(8bit) 键值长度(24bit,16MB) 键名 键值 ](变长，当键值长度为0表示删除)
+// ...
+// [事务编号(64bit)] -- 事务结束
 
 package gkvdb
 
@@ -39,11 +42,14 @@ const (
     gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 1024                     // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
+    gBINLOG_TYPE_TRANSACTION = 10                       // BinLog操作类型，事务
 )
 
 // KV数据库
 type DB struct {
-    mu      sync.RWMutex
+    mu      sync.RWMutex      // API互斥锁
+    bmu     sync.RWMutex      // BinLog互斥锁(内部使用)
+
     path    string            // 数据文件存放目录路径
     name    string            // 数据文件名
 
@@ -55,7 +61,6 @@ type DB struct {
     mtsp    *gfilespace.Space // 元数据文件碎片管理
     dbsp    *gfilespace.Space // 数据文件碎片管理器
     memt    *MemTable         // MemTable
-    cached  int32             // 是否开启缓存功能(可动态开启/关闭)
     closed  int32             // 数据库是否关闭，以便异步线程进行判断处理
 }
 
@@ -113,7 +118,6 @@ func New(path, name string) (*DB, error) {
     db := &DB {
         path   : path,
         name   : name,
-        cached : 0,
     }
     db.memt = newMemTable(db)
 
@@ -148,8 +152,9 @@ func New(path, name string) (*DB, error) {
 
     // 初始化相关服务
     db.initFileSpace()
-    db.startAutoSavingLoop()
-    db.startAutoCompactingLoop()
+    db.initFromBinLog()
+    //db.startAutoSavingLoop()
+    //db.startAutoCompactingLoop()
     return db, nil
 }
 
@@ -167,14 +172,6 @@ func (db *DB) getDataFilePath() string {
 
 func (db *DB) getBinLogFilePath() string {
     return db.path + gfile.Separator + db.name + ".bl"
-}
-
-func (db *DB) isCacheEnabled() bool {
-    return atomic.LoadInt32(&db.cached) > 0
-}
-
-func (db *DB) setCache(v int32) {
-    atomic.StoreInt32(&db.cached, v)
 }
 
 // 关闭数据库链接，释放资源

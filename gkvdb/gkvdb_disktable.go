@@ -8,11 +8,6 @@ import (
     "gitee.com/johng/gf/g/encoding/gbinary"
 )
 
-// 同步数据到磁盘
-func (db *DB) sync() {
-    db.memt.sync()
-}
-
 // 查询
 func (db *DB) get(key []byte) []byte {
     ckey := "value_cache_" + string(key)
@@ -73,7 +68,7 @@ func (db *DB) remove(key []byte) error {
     return nil
 }
 
-// 遍历
+// 遍历，注意遍历只针对磁盘化后的数据，并且不包括中间binlog数据
 func (db *DB) items(max int) map[string][]byte {
     db.mu.RLock()
     defer db.mu.RUnlock()
