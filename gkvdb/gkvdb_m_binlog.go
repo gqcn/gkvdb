@@ -19,17 +19,18 @@ func (db *DB) initFromBinLog() {
 
     for i := 0; i < len(blbuffer); {
         buffer    := blbuffer[i : i + 13]
-        synced    := int(gbinary.DecodeToInt8(buffer[i  : i + 1]))
-        blsize    := int(gbinary.DecodeToInt32(buffer[i + 1 : i + 5]))
-        txidstart := gbinary.DecodeToInt64(buffer[i + 5 : i + 13])
+        synced    := int(gbinary.DecodeToInt8(buffer[0 : 1]))
+        blsize    := int(gbinary.DecodeToInt32(buffer[1 : 5]))
+        txidstart := gbinary.DecodeToInt64(buffer[5 : 13])
         txidend   := gbinary.DecodeToInt64(blbuffer[i + 13 + blsize : i + 13 + blsize + 8])
         if txidstart == txidend {
             // 正常数据
             if synced != 1 {
                 tx      := db.binlogBufferToTx(blbuffer[i + 13 : i + 13 + blsize])
                 tx.start = int64(i)
+                db.memt.set(tx)
             }
-            i += i + 13 + blsize + 8
+            i += 13 + blsize + 8
         } else {
             // 异常数据，需要矫正，查找到下一条正常的数据，中间的数据直接丢弃
             i += 13
@@ -41,13 +42,13 @@ func (db *DB) initFromBinLog() {
 func (db *DB) binlogBufferToTx(buffer []byte) *Transaction {
     tx := db.Begin()
     for i := 0; i < len(buffer); {
-        bits  := gbinary.DecodeBytesToBits(buffer[i : i + 32])
+        bits  := gbinary.DecodeBytesToBits(buffer[i : i + 4])
         klen  := int(gbinary.DecodeBits(bits[i : i + 8]))
         vlen  := int(gbinary.DecodeBits(bits[i + 8 : i + 32]))
-        key   := buffer[i + 32 : i + 32 + klen]
-        value := buffer[i + 32 + klen : i + 32 + klen + vlen]
+        key   := buffer[i + 4 : i + 4 + klen]
+        value := buffer[i + 4 + klen : i + 4 + klen + vlen]
         tx.Set(key, value)
-        i += i + 32 + klen + vlen
+        i += i + 4 + klen + vlen
     }
     return tx
 }
@@ -56,7 +57,12 @@ func (db *DB) binlogBufferToTx(buffer []byte) *Transaction {
 // 返回写入的文件开始位置，以及是否有错误
 func (db *DB) addBinLog(txid int64, binlogs []*BinLog) (int64, error) {
     buffer := make([]byte, 0)
+    // 事务开始
+    buffer  = append(buffer, gbinary.EncodeInt8(0)...)
+    buffer  = append(buffer, gbinary.EncodeInt32(0)...)
+    buffer  = append(buffer, gbinary.EncodeInt64(int64(txid))...)
     // 数据列表
+    blsize := 0
     for _, binlog := range binlogs {
         bits   := make([]gbinary.Bit, 0)
         bits    = gbinary.EncodeBits(bits, uint(len(binlog.k)),   8)
@@ -64,13 +70,12 @@ func (db *DB) addBinLog(txid int64, binlogs []*BinLog) (int64, error) {
         buffer  = append(buffer, gbinary.EncodeBitsToBytes(bits)...)
         buffer  = append(buffer, binlog.k...)
         buffer  = append(buffer, binlog.v...)
+        blsize += 4 + len(binlog.k) + len(binlog.v)
     }
-    // 事务开始
-    buffer  = append(buffer, gbinary.EncodeInt8(0)...)
-    buffer  = append(buffer, gbinary.EncodeInt32(int32(len(buffer)))...)
-    buffer  = append(buffer, gbinary.EncodeInt64(int64(txid))...)
     // 事务结束
     buffer  = append(buffer, gbinary.EncodeInt64(txid)...)
+    // 修改数据长度
+    copy(buffer[1:], gbinary.EncodeInt32(int32(blsize)))
 
     // 从指针池获取
     blpf, err := db.blfp.File()
