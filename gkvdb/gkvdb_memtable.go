@@ -21,7 +21,7 @@ func newMemTable(db *DB) *MemTable {
     }
 }
 
-// 保存
+// 保存事务
 func (table *MemTable) set(tx *Transaction) error {
     table.mu.Lock()
     defer table.mu.Unlock()
@@ -37,7 +37,7 @@ func (table *MemTable) set(tx *Transaction) error {
     return nil
 }
 
-// 获取
+// 查询键值对
 func (table *MemTable) get(key []byte) ([]byte, bool) {
     table.mu.RLock()
     defer table.mu.RUnlock()
@@ -82,4 +82,21 @@ func (table *MemTable) removeMinTx() {
     for _, item := range tx.items {
         delete(table.data, string(item.k))
     }
+}
+
+// 返回指定大小的键值对列表
+func (table *MemTable) items(max int) map[string][]byte {
+    table.mu.RLock()
+    defer table.mu.RUnlock()
+    if len(table.data) >= max {
+        return table.data
+    }
+    m := make(map[string][]byte)
+    for k, v := range table.data {
+        m[k] = v
+        if len(m) == max {
+            break
+        }
+    }
+    return m
 }

@@ -47,15 +47,15 @@ func (db *DB) initFromBinLog() {
 
 // 将二进制数据转换为事务对象
 func (db *DB) binlogBufferToTx(buffer []byte) *Transaction {
-    tx := db.Begin()
+    tx := db.newTransaction()
     for i := 0; i < len(buffer); {
         bits  := gbinary.DecodeBytesToBits(buffer[i : i + 4])
-        klen  := int(gbinary.DecodeBits(bits[i : i + 8]))
-        vlen  := int(gbinary.DecodeBits(bits[i + 8 : i + 32]))
+        klen  := int(gbinary.DecodeBits(bits[0 : 8]))
+        vlen  := int(gbinary.DecodeBits(bits[8 : 32]))
         key   := buffer[i + 4 : i + 4 + klen]
         value := buffer[i + 4 + klen : i + 4 + klen + vlen]
         tx.Set(key, value)
-        i += i + 4 + klen + vlen
+        i += 4 + klen + vlen
     }
     tx.setAsCommitted()
     return tx

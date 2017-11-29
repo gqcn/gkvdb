@@ -69,7 +69,7 @@ func (db *DB) remove(key []byte) error {
 }
 
 // 遍历，注意遍历只针对磁盘化后的数据，并且不包括中间binlog数据
-func (db *DB) items(max int) map[string][]byte {
+func (db *DB) items(max int, m map[string][]byte) map[string][]byte {
     db.mu.RLock()
     defer db.mu.RUnlock()
 
@@ -85,7 +85,6 @@ func (db *DB) items(max int) map[string][]byte {
     }
     defer dbpf.Close()
 
-    m := make(map[string][]byte)
     for start := int64(0); ; start += gMETA_BUCKET_SIZE {
         // 如果包含在碎片中，那么忽略
         if db.mtsp.Contains(int(start), gMETA_BUCKET_SIZE) {

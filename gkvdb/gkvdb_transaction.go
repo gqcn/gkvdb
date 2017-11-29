@@ -54,7 +54,7 @@ func (tx *Transaction) setAsCommitted() {
 }
 
 // 添加数据
-func (tx *Transaction) Set(key, value []byte) {
+func (tx *Transaction) Set(key, value []byte) *Transaction {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
@@ -63,6 +63,7 @@ func (tx *Transaction) Set(key, value []byte) {
     }
     tx.items                = append(tx.items, &TransactionItem{key, value})
     tx.datamap[string(key)] = value
+    return tx
 }
 
 // 查询数据
@@ -77,50 +78,63 @@ func (tx *Transaction) Get(key []byte) []byte {
 }
 
 // 删除数据
-func (tx *Transaction) Remove(key []byte) {
+func (tx *Transaction) Remove(key []byte) *Transaction {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
     if tx.committed {
         tx.reset()
     }
-    tx.items = append(tx.items, &TransactionItem{key, nil})
-    delete(tx.datamap, string(key))
+    tx.items                = append(tx.items, &TransactionItem{key, nil})
+    tx.datamap[string(key)] = nil
+    return tx
 }
 
 // 提交数据
 func (tx *Transaction) Commit() error {
     tx.mu.Lock()
     defer tx.mu.Unlock()
+
+    if len(tx.items) == 0 || tx.committed {
+        return nil
+    }
     // 先写Binlog
-    start, err := tx.db.addBinLog(tx.id, tx.items)
+    start, err := tx.db.addBinLogByTx(tx)
     if err != nil {
         return err
     }
     tx.start     = start
     tx.committed = true
     // 再写内存表，这里创建一个新的变量，内存表中保存的事务指针是该变量的指针
-    newtx       := *tx
-    tx.db.memt.set(&newtx)
+    tx.db.memt.set(tx.copy())
     return nil
 }
 
 // 回滚数据
-func (tx *Transaction) Rollback() error {
-    return tx.reset()
-}
-
-// 重置事务
-func (tx *Transaction) reset() error {
+func (tx *Transaction) Rollback() {
     tx.mu.Lock()
     defer tx.mu.Unlock()
+    tx.reset()
+}
 
+// 创建一个事务的拷贝(数据拷贝)
+func (tx *Transaction) copy() *Transaction {
+    newtx          := tx.db.newTransaction()
+    newtx.id        = tx.id
+    newtx.start     = tx.start
+    newtx.items     = tx.items
+    newtx.datamap   = tx.datamap
+    newtx.committed = tx.committed
+    return newtx
+}
+
+// 重置事务(内部调用)
+func (tx *Transaction) reset() {
     tx.id        = tx.db.txid()
     tx.start     = -1
     tx.items     = make([]*TransactionItem, 0)
     tx.datamap   = make(map[string][]byte)
     tx.committed = false
-    return nil
 }
 
 // 将事务事务同步到磁盘

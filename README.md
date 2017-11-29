@@ -8,7 +8,7 @@ go get -u gitee.com/johng/gkvdb
 
 
 # 使用
-#### 基本用法
+#### 1、基本用法
 ```go
 import "gitee.com/johng/gkvdb/gkvdb"
 
@@ -18,19 +18,18 @@ if err != nil {
     fmt.Println(err)
 }
 
-// 插入数据
 key   := []byte("name")
 value := []byte("john")
+
+// 插入数据
 if err := db.Set(key, value); err != nil {
     fmt.Println(err)
 }
 
 // 查询数据
-key   := []byte("name")
 fmt.Println(db.Get(key))
 
 // 删除数据
-key   := []byte("name")
 if err := db.Remove(key); err != nil {
     fmt.Println(err)
 }
@@ -40,28 +39,56 @@ db.Close()
 ```
 
 
-#### 开启/关闭缓存
+#### 2、事务操作
 ```go
-// 启用缓存
-db.SetCache(true)
-
-// 关闭缓存
-db.SetCache(false)
-```
-
-
-#### 特殊写入操作
-```go
-// 无论缓存是否开启，直接写入数据到磁盘
 key   := []byte("name")
 value := []byte("john")
-if err := db.SetWithoutCache(key, value); err != nil {
-    fmt.Println(err)
-}
+
+// 开启事务
+tx    := db.Begin()
+
+// 事务写入
+tx.Set(key, value)
+
+// 事务查询
+fmt.Println(tx.Get(key))
+
+// 事务提交
+tx.Commit()
+
+// 事务删除
+tx.Remove(key)
+
+// 事务回滚
+tx.Rollback()
+
+// 链式操作
+db.Begin().Set(key, value).Commit()
+db.Begin().Rmove(key).Commit()
 ```
 
+#### 3、批量操作
+```go
+// 批量操作需要使用事务来实现
+tx := db.Begin()
 
-#### 键值对随机遍历
+// 批量写入
+for i := 0; i < 100; i++ {
+    key   := []byte("k_" + strconv.Itoa(i))
+    value := []byte("v_" + strconv.Itoa(i))
+    tx.Set(key, value)
+}
+tx.Commit()
+
+// 批量删除
+for i := 0; i < 100; i++ {
+    key   := []byte("k_" + strconv.Itoa(i))
+    tx.Remove(key)
+}
+tx.Commit()
+```
+
+#### 4、随机遍历
 ```go
 // 随机获取10条数据
 fmt.Println(db.Items(10))

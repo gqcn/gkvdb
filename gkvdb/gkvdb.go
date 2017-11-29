@@ -39,7 +39,7 @@ const (
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
-    gAUTO_SAVING_TIMEOUT     = 1000                     // 自动同步到磁盘的时间(毫秒)
+    gAUTO_SAVING_TIMEOUT     = 5000                     // 自动同步到磁盘的时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 1024                     // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
 )
@@ -149,12 +149,29 @@ func New(path, name string) (*DB, error) {
         gfile.PutBinContents(ixpath, make([]byte, gINDEX_BUCKET_SIZE*gDEFAULT_PART_SIZE))
     }
 
-    // 初始化相关服务
-    db.initFileSpace()
-    db.initFromBinLog()
-    db.startAutoSavingLoop()
-    //db.startAutoCompactingLoop()
+    // 初始化相关服务，并进行自检
+    db.initAndCheckSelf()
     return db, nil
+}
+
+// 初始化相关服务，并进行自检
+func (db *DB) initAndCheckSelf() {
+    var wg sync.WaitGroup
+    wg.Add(2)
+    // 并行初始化检测碎片
+    go func() {
+        db.initFileSpace()
+        wg.Done()
+    }()
+    // 并行初始化binlog
+    go func() {
+        db.initFromBinLog()
+        wg.Done()
+    }()
+    wg.Wait()
+    // 自检完毕之后在启动相关服务
+    db.startAutoSavingLoop()
+    db.startAutoCompactingLoop()
 }
 
 func (db *DB) getIndexFilePath() string {

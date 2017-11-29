@@ -54,38 +54,10 @@ func TestRemove(count int) {
 
 
 func main() {
-    var count int = 0
-    // 100W性能测试
-    fmt.Println("=======================================100W=======================================")
-    count = 100000
-    TestSet(count)
+    count := 1000000
+    //TestSet(count)
     TestGet(count)
-    //TestRemove(count)
-    //
-    //if err := db.Remove([]byte("key_" + strconv.Itoa(1))); err != nil {
-    //    fmt.Println(err)
-    //}
-    //
-    //if err := db.Remove([]byte("key_" + strconv.Itoa(10))); err != nil {
-    //    fmt.Println(err)
-    //}
-    //
-    //if err := db.Remove([]byte("key_" + strconv.Itoa(80))); err != nil {
-    //    fmt.Println(err)
-    //}
-    // 500W性能测试
-    //fmt.Println("=======================================500W=======================================")
-    //count = 5000000
-    //TestSet(count)
-    //TestGet(count)
-    //TestRemove(count)
-    //// 1000W性能测试
-    //fmt.Println("=======================================1000W=======================================")
-    //count = 10000000
-    //TestSet(count)
-    //TestGet(count)
-    //TestRemove(count)
-
+    TestRemove(count)
     select {
 
     }

@@ -15,31 +15,33 @@ func (db *DB) Get(key []byte) []byte {
 
 // 设置KV数据
 func (db *DB) Set(key []byte, value []byte) error {
-    if len(key) > gMAX_KEY_SIZE {
-        return errors.New("too large key size, max allowed: " + strconv.Itoa(gMAX_KEY_SIZE) + " bytes")
+    if len(key) > gMAX_KEY_SIZE || len(key) == 0 {
+        return errors.New("invalid key size, should be in 1 and " + strconv.Itoa(gMAX_KEY_SIZE) + " bytes")
     }
     if len(value) > gMAX_VALUE_SIZE {
         return errors.New("too large value size, max allowed: " + strconv.Itoa(gMAX_VALUE_SIZE) + " bytes")
     }
-    tx := db.Begin()
-    tx.Set(key, value)
-    return tx.Commit()
+    return db.Begin().Set(key, value).Commit()
 }
 
 // 删除KV数据
 func (db *DB) Remove(key []byte) error {
-    if len(key) > gMAX_KEY_SIZE {
-        return errors.New("too large key size, max allowed: " + strconv.Itoa(gMAX_KEY_SIZE) + " bytes")
+    if len(key) > gMAX_KEY_SIZE || len(key) == 0 {
+        return errors.New("invalid key size, should be in 1 and " + strconv.Itoa(gMAX_KEY_SIZE) + " bytes")
     }
-    tx := db.Begin()
-    tx.Remove(key)
-    return tx.Commit()
+    return db.Begin().Remove(key).Commit()
 }
 
 // 获取max条随机键值对，max=-1时获取所有数据返回
 // 该方法会强制性遍历整个数据库
 func (db *DB) Items(max int) map[string][]byte {
-    return db.items(max)
+    // 先查询内存表
+    m := db.memt.items(max)
+    if max == -1 || max - len(m) > 0 {
+        // 数据不够再遍历磁盘
+        return db.items(max - len(m), m)
+    }
+    return m
 }
 
 // 获取最多max个随机键名，构成列表返回

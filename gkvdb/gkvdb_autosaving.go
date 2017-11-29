@@ -6,6 +6,7 @@ import (
     "time"
     "gitee.com/johng/gf/g/os/glog"
     "gitee.com/johng/gf/g/os/gcache"
+    "gitee.com/johng/gf/g/os/gfile"
 )
 
 // 自动保存线程循环
@@ -41,7 +42,11 @@ func (db *DB) doAutoSaving() error {
             }
         } else {
             // 如果所有的事务数据已经同步完成，那么矫正binblog文件大小
-            os.Truncate(db.getBinLogFilePath(), 0)
+            binlogPath := db.getBinLogFilePath()
+            if gfile.Size(binlogPath) > 0 {
+                //fmt.Println("truncate")
+                os.Truncate(db.getBinLogFilePath(), 0)
+            }
             break
         }
     }
