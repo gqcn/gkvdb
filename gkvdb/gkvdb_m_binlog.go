@@ -1,8 +1,8 @@
 package gkvdb
 
 import (
-    "gitee.com/johng/gf/g/encoding/gbinary"
     "gitee.com/johng/gf/g/os/gfile"
+    "gitee.com/johng/gf/g/encoding/gbinary"
 )
 
 type BinLog struct {
@@ -20,14 +20,25 @@ func (db *DB) initFromBinLog() {
     if len(blbuffer) == 0 {
         return
     }
-
+    // 在异常数据下，需要花费更多的时间进行数据纠正(字节不断递增计算下一条正确的binlog位置)
     for i := 0; i < len(blbuffer); {
-        buffer    := blbuffer[i : i + 13]
-        synced    := int(gbinary.DecodeToInt8(buffer[0 : 1]))
-        blsize    := int(gbinary.DecodeToInt32(buffer[1 : 5]))
+        buffer := blbuffer[i : i + 13]
+        synced := int(gbinary.DecodeToInt8(buffer[0 : 1]))
+        if synced < 0 || synced > 1 {
+            i++
+            continue
+        }
+        blsize := int(gbinary.DecodeToInt32(buffer[1 : 5]))
+        if i + 13 + blsize + 8 > len(blbuffer) {
+            i++
+            continue
+        }
         txidstart := gbinary.DecodeToInt64(buffer[5 : 13])
         txidend   := gbinary.DecodeToInt64(blbuffer[i + 13 + blsize : i + 13 + blsize + 8])
-        if txidstart == txidend {
+        if txidstart != txidend {
+            i++
+            continue
+        } else {
             // 正常数据，同步到memtable中
             if synced != 1 {
                 tx      := db.binlogBufferToTx(blbuffer[i + 13 : i + 13 + blsize])
@@ -35,9 +46,6 @@ func (db *DB) initFromBinLog() {
                 db.memt.set(tx)
             }
             i += 13 + blsize + 8
-        } else {
-            // 异常数据，需要矫正，查找到下一条正常的数据，中间的数据直接丢弃
-            i += 13
         }
     }
 }
@@ -54,6 +62,7 @@ func (db *DB) binlogBufferToTx(buffer []byte) *Transaction {
         tx.Set(key, value)
         i += i + 4 + klen + vlen
     }
+    tx.setAsCommitted()
     return tx
 }
 

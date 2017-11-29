@@ -6,24 +6,31 @@ import (
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/os/glog"
 )
 
 // 数据文件自动整理
 func (db *DB) startAutoCompactingLoop() {
     go func() {
         for !db.isClosed() {
-            db.autoCompactingData()
-            db.autoCompactingMeta()
+            if err := db.autoCompactingData(); err != nil {
+                glog.Error(err)
+                time.Sleep(time.Minute)
+            }
+            if err := db.autoCompactingMeta(); err != nil {
+                glog.Error(err)
+                time.Sleep(time.Minute)
+            }
             time.Sleep(gAUTO_COMPACTING_TIMEOUT*time.Millisecond)
         }
     }()
 }
 
 // 数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
-func (db *DB) autoCompactingData() {
+func (db *DB) autoCompactingData() error {
     key := "auto_compacting_data_cache_key_for_" + db.path + db.name
     if gcache.Get(key) != nil {
-        return
+        return nil
     }
     gcache.Set(key, struct{}{}, 86400)
     defer gcache.Remove(key)
@@ -33,20 +40,20 @@ func (db *DB) autoCompactingData() {
 
     maxsize := db.getDbFileSpaceMaxSize()
     if maxsize < gAUTO_COMPACTING_MINSIZE {
-        return
+        return nil
     }
     index := db.getDbFileSpace(maxsize)
     if index < 0 {
-        return
+        return nil
     }
     dbsize  := gfile.Size(db.getDataFilePath())
     dbstart := index + int64(maxsize)
     if dbstart == dbsize {
-        os.Truncate(db.getDataFilePath(), int64(index))
+        return os.Truncate(db.getDataFilePath(), int64(index))
     } else {
         dbpf, err := db.dbfp.File()
         if err != nil {
-            return
+            return err
         }
         defer dbpf.Close()
         if buffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbstart + 1 + gMAX_KEY_SIZE); buffer != nil {
@@ -65,18 +72,23 @@ func (db *DB) autoCompactingData() {
                         db.updateDataByRecord(record)
                         db.updateMetaByRecord(record)
                         db.updateIndexByRecord(record)
+                    } else {
+                        return err
                     }
                 }
+            } else {
+                return err
             }
         }
     }
+    return nil
 }
 
 // 元数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
-func (db *DB) autoCompactingMeta() {
+func (db *DB) autoCompactingMeta() error {
     key := "auto_compacting_meta_cache_key_for_" + db.path + db.name
     if gcache.Get(key) != nil {
-        return
+        return nil
     }
     gcache.Set(key, struct{}{}, 86400)
     defer gcache.Remove(key)
@@ -86,20 +98,20 @@ func (db *DB) autoCompactingMeta() {
 
     maxsize := db.getMtFileSpaceMaxSize()
     if maxsize < gAUTO_COMPACTING_MINSIZE {
-        return
+        return nil
     }
     index := db.getMtFileSpace(maxsize)
     if index < 0 {
-        return
+        return nil
     }
     mtsize  := gfile.Size(db.getMetaFilePath())
     mtstart := index + int64(maxsize)
     if mtstart == mtsize {
-        os.Truncate(db.getMetaFilePath(), int64(index))
+        return os.Truncate(db.getMetaFilePath(), int64(index))
     } else {
         mtpf, err := db.mtfp.File()
         if err != nil {
-            return
+            return err
         }
         defer mtpf.Close()
         // 找到对应空闲块下一条meta item数据
@@ -117,9 +129,14 @@ func (db *DB) autoCompactingMeta() {
                     if _, err = mtpf.File().WriteAt(mtbuffer, record.meta.start); err == nil {
                         db.updateIndexByRecord(record)
                         db.checkAndResizeMtCap(record)
+                    } else {
+                        return err
                     }
                 }
+            } else {
+                return err
             }
         }
     }
+    return nil
 }
