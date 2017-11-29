@@ -5,11 +5,6 @@ import (
     "strconv"
 )
 
-// 关闭数据库链接
-func (db *DB) Close() {
-    db.close()
-}
-
 // 查询KV数据
 func (db *DB) Get(key []byte) []byte {
     if v, ok := db.memt.get(key); ok {
@@ -26,14 +21,9 @@ func (db *DB) Set(key []byte, value []byte) error {
     if len(value) > gMAX_VALUE_SIZE {
         return errors.New("too large value size, max allowed: " + strconv.Itoa(gMAX_VALUE_SIZE) + " bytes")
     }
-    // 先写binlog
     tx := db.Begin()
     tx.Set(key, value)
-    if err := tx.Commit(); err != nil {
-        return err
-    }
-    // 再写内存表
-    return db.memt.set(tx)
+    return tx.Commit()
 }
 
 // 删除KV数据
@@ -41,14 +31,9 @@ func (db *DB) Remove(key []byte) error {
     if len(key) > gMAX_KEY_SIZE {
         return errors.New("too large key size, max allowed: " + strconv.Itoa(gMAX_KEY_SIZE) + " bytes")
     }
-    // 先写binlog
     tx := db.Begin()
     tx.Remove(key)
-    if err := tx.Commit(); err != nil {
-        return err
-    }
-    // 再写内存表
-    return db.memt.set(tx)
+    return tx.Commit()
 }
 
 // 获取max条随机键值对，max=-1时获取所有数据返回
@@ -75,6 +60,11 @@ func (db *DB) Values(max int) [][]byte {
         values = append(values, v)
     }
     return values
+}
+
+// 关闭数据库链接
+func (db *DB) Close() {
+    db.close()
 }
 
 // 打印数据库状态(调试使用)

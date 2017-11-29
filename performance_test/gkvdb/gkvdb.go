@@ -55,7 +55,6 @@ func TestRemove(count int) {
 
 func main() {
     var count int = 0
-    
     // 100W性能测试
     fmt.Println("=======================================100W=======================================")
     count = 100000

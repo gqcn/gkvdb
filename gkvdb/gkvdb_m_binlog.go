@@ -5,11 +5,6 @@ import (
     "gitee.com/johng/gf/g/encoding/gbinary"
 )
 
-type BinLog struct {
-    k []byte
-    v []byte
-}
-
 // 从binlog文件中恢复未同步数据到memtable中
 // 内部会检测异常数据写入，并忽略异常数据，以便异常数据不会进入到数据库中
 func (db *DB) initFromBinLog() {
@@ -68,25 +63,25 @@ func (db *DB) binlogBufferToTx(buffer []byte) *Transaction {
 
 // 添加binlog到文件，支持批量添加
 // 返回写入的文件开始位置，以及是否有错误
-func (db *DB) addBinLog(txid int64, binlogs []*BinLog) (int64, error) {
+func (db *DB) addBinLogByTx(tx *Transaction) (int64, error) {
     buffer := make([]byte, 0)
     // 事务开始
     buffer  = append(buffer, gbinary.EncodeInt8(0)...)
     buffer  = append(buffer, gbinary.EncodeInt32(0)...)
-    buffer  = append(buffer, gbinary.EncodeInt64(int64(txid))...)
+    buffer  = append(buffer, gbinary.EncodeInt64(tx.id)...)
     // 数据列表
     blsize := 0
-    for _, binlog := range binlogs {
+    for _, item := range tx.items {
         bits   := make([]gbinary.Bit, 0)
-        bits    = gbinary.EncodeBits(bits, uint(len(binlog.k)),   8)
-        bits    = gbinary.EncodeBits(bits, uint(len(binlog.v)),  24)
+        bits    = gbinary.EncodeBits(bits, uint(len(item.k)),   8)
+        bits    = gbinary.EncodeBits(bits, uint(len(item.v)),  24)
         buffer  = append(buffer, gbinary.EncodeBitsToBytes(bits)...)
-        buffer  = append(buffer, binlog.k...)
-        buffer  = append(buffer, binlog.v...)
-        blsize += 4 + len(binlog.k) + len(binlog.v)
+        buffer  = append(buffer, item.k...)
+        buffer  = append(buffer, item.v...)
+        blsize += 4 + len(item.k) + len(item.v)
     }
     // 事务结束
-    buffer  = append(buffer, gbinary.EncodeInt64(txid)...)
+    buffer  = append(buffer, gbinary.EncodeInt64(tx.id)...)
     // 修改数据长度
     copy(buffer[1:], gbinary.EncodeInt32(int32(blsize)))
 

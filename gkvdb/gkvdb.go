@@ -135,7 +135,7 @@ func New(path, name string) (*DB, error) {
         return nil, errors.New("permission denied to data file: " + dbpath)
     }
     if gfile.Exists(blpath) && (!gfile.IsWritable(blpath) || !gfile.IsReadable(blpath)){
-        return nil, errors.New("permission denied to bin log file: " + blpath)
+        return nil, errors.New("permission denied to binlog file: " + blpath)
     }
 
     // 创建文件指针池
@@ -178,6 +178,7 @@ func (db *DB) close() {
     db.ixfp.Close()
     db.mtfp.Close()
     db.dbfp.Close()
+    db.blfp.Close()
     atomic.StoreInt32(&db.closed, 1)
 }
 

@@ -12,19 +12,30 @@ type Transaction struct {
     db        *DB                   // 所属数据库
     id        int64                 // 事务编号
     start     int64                 // BinLog文件开始位置
+    items     []*TransactionItem    // BinLog数据，保证写入顺序
     datamap   map[string][]byte     // 事务内部的KV映射表，便于事务查询
-    binlogs   []*BinLog             // BinLog数据，保证写入顺序
     committed bool                  // 事务是否已经提交到binlog文件
+}
+
+// 事务数据项
+type TransactionItem struct {
+    k []byte
+    v []byte
 }
 
 // 创建一个事务
 func (db *DB) Begin() *Transaction {
+    return db.newTransaction()
+}
+
+// 创建一个事务对象
+func (db *DB) newTransaction() *Transaction {
     tx := &Transaction {
         db      : db,
         id      : db.txid(),
         start   : -1,
+        items   : make([]*TransactionItem, 0),
         datamap : make(map[string][]byte),
-        binlogs : make([]*BinLog, 0),
     }
     return tx
 }
@@ -50,7 +61,7 @@ func (tx *Transaction) Set(key, value []byte) {
     if tx.committed {
         tx.reset()
     }
-    tx.binlogs              = append(tx.binlogs, &BinLog{key, value})
+    tx.items                = append(tx.items, &TransactionItem{key, value})
     tx.datamap[string(key)] = value
 }
 
@@ -73,7 +84,7 @@ func (tx *Transaction) Remove(key []byte) {
     if tx.committed {
         tx.reset()
     }
-    tx.binlogs = append(tx.binlogs, &BinLog{key, nil})
+    tx.items = append(tx.items, &TransactionItem{key, nil})
     delete(tx.datamap, string(key))
 }
 
@@ -81,13 +92,16 @@ func (tx *Transaction) Remove(key []byte) {
 func (tx *Transaction) Commit() error {
     tx.mu.Lock()
     defer tx.mu.Unlock()
-
-    start, err := tx.db.addBinLog(tx.id, tx.binlogs)
+    // 先写Binlog
+    start, err := tx.db.addBinLog(tx.id, tx.items)
     if err != nil {
         return err
     }
     tx.start     = start
     tx.committed = true
+    // 再写内存表，这里创建一个新的变量，内存表中保存的事务指针是该变量的指针
+    newtx       := *tx
+    tx.db.memt.set(&newtx)
     return nil
 }
 
@@ -103,8 +117,8 @@ func (tx *Transaction) reset() error {
 
     tx.id        = tx.db.txid()
     tx.start     = -1
+    tx.items     = make([]*TransactionItem, 0)
     tx.datamap   = make(map[string][]byte)
-    tx.binlogs   = make([]*BinLog, 0)
     tx.committed = false
     return nil
 }
@@ -119,11 +133,16 @@ func (tx *Transaction) sync() error {
         return errors.New("uncommitted transaction")
     }
 
-    for _, binlog := range tx.binlogs {
-        if len(binlog.v) == 0 {
-            tx.db.remove(binlog.k)
+    for _, item := range tx.items {
+        if len(item.v) == 0 {
+            if err := tx.db.remove(item.k); err != nil {
+                return err
+            }
         } else {
-            tx.db.set(binlog.k, binlog.v)
+            if err := tx.db.set(item.k, item.v); err != nil {
+                return err
+            }
         }
     }
+    return nil
 }
