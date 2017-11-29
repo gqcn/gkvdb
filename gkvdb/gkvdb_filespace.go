@@ -11,7 +11,8 @@ import (
 func (db *DB) initFileSpace() {
     db.mtsp = gfilespace.New()
     db.dbsp = gfilespace.New()
-    db.recountFileSpace()
+    // 异步计算碎片详情
+    go db.recountFileSpace()
 }
 
 // 重新计算空间碎片信息

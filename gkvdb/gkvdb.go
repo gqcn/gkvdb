@@ -149,29 +149,12 @@ func New(path, name string) (*DB, error) {
         gfile.PutBinContents(ixpath, make([]byte, gINDEX_BUCKET_SIZE*gDEFAULT_PART_SIZE))
     }
 
-    // 初始化相关服务，并进行自检
-    db.initAndCheckSelf()
-    return db, nil
-}
-
-// 初始化相关服务，并进行自检
-func (db *DB) initAndCheckSelf() {
-    var wg sync.WaitGroup
-    wg.Add(2)
-    // 并行初始化检测碎片
-    go func() {
-        db.initFileSpace()
-        wg.Done()
-    }()
-    // 并行初始化binlog
-    go func() {
-        db.initFromBinLog()
-        wg.Done()
-    }()
-    wg.Wait()
-    // 自检完毕之后在启动相关服务
+    // 自检并初始化相关服务
+    db.initFileSpace()
+    db.initFromBinLog()
     db.startAutoSavingLoop()
     db.startAutoCompactingLoop()
+    return db, nil
 }
 
 func (db *DB) getIndexFilePath() string {

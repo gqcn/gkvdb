@@ -2,13 +2,18 @@ package main
 
 import (
     "fmt"
-    "gitee.com/johng/gf/g/util/gtime"
     "strconv"
+    "gitee.com/johng/gf/g/util/gtime"
     "github.com/syndtr/goleveldb/leveldb"
-    "github.com/syndtr/goleveldb/leveldb/opt"
+    "sync"
 )
 
-var db *leveldb.DB
+// 数据库对象指针
+var db    *leveldb.DB
+// 按照批次执行操作的数量
+var batch int = 10000
+// 并发数量
+var group int = 50
 
 func init() {
     t := gtime.Microsecond()
@@ -16,97 +21,102 @@ func init() {
     fmt.Println("db init:", gtime.Microsecond() - t)
 }
 
-// 测试默认带缓存情况下的数据库写入
-func TestSetWithCache(count int) {
-    t := gtime.Microsecond()
-    for i := 0; i < count; i++ {
-        key   := []byte("key_" + strconv.Itoa(i))
-        value := []byte("value_" + strconv.Itoa(i))
-        if err := db.Put(key, value, nil); err != nil {
-            fmt.Println(err)
+func TestSet(count int) {
+    var wg sync.WaitGroup
+    t  := gtime.Microsecond()
+    p  := count/group
+    p  += group - p%group
+    for g := 0; g < group; g++ {
+        ss := g*p + 1
+        se := (g + 1)*p
+        if se > count {
+            se = count
         }
+        wg.Add(1)
+        go func(start, end int) {
+            b := new(leveldb.Batch)
+            for i := start; i <= end; i++ {
+                key   := []byte("key_" + strconv.Itoa(i))
+                value := []byte("value_" + strconv.Itoa(i))
+                b.Put(key, value)
+                if i % batch == 0 {
+                    db.Write(b, nil)
+                    b.Reset()
+                }
+            }
+            db.Write(b, nil)
+            b.Reset()
+            wg.Done()
+        }(ss, se)
     }
-    fmt.Println("TestSetWithCache:", gtime.Microsecond() - t)
+    wg.Wait()
+    fmt.Println("TestSet:", gtime.Microsecond() - t)
 }
 
-// 测试默认带缓存情况下的数据库查询
-func TestGetWithCache(count int) {
-    t := gtime.Microsecond()
-    for i := 0; i < count; i++ {
-        key := []byte("key_" + strconv.Itoa(i))
-        if r, _ := db.Get(key, nil); r == nil {
-            fmt.Println("TestGetWithCache value not found for index:", i)
+func TestRemove(count int) {
+    var wg sync.WaitGroup
+    t  := gtime.Microsecond()
+    p  := count/group
+    p  += group - p%group
+    for g := 0; g < group; g++ {
+        ss := g*p + 1
+        se := (g + 1)*p
+        if se > count {
+            se = count
         }
+        wg.Add(1)
+        go func(start, end int) {
+            b := new(leveldb.Batch)
+            for i := start; i <= end; i++ {
+                key := []byte("key_" + strconv.Itoa(i))
+                b.Delete(key)
+                if i % batch == 0 {
+                    db.Write(b, nil)
+                    b.Reset()
+                }
+            }
+            db.Write(b, nil)
+            b.Reset()
+            wg.Done()
+        }(ss, se)
     }
-    fmt.Println("TestGetWithCache:", gtime.Microsecond() - t)
+    wg.Wait()
+    fmt.Println("TestRemove:", gtime.Microsecond() - t)
 }
 
-// 测试默认带缓存情况下的数据库删除
-func TestRemoveWithCache(count int) {
-    t := gtime.Microsecond()
-    for i := 0; i < count; i++ {
-        key := []byte("key_" + strconv.Itoa(i))
-        if err := db.Delete(key, nil); err != nil {
-            fmt.Println(err)
+func TestGet(count int) {
+    var wg sync.WaitGroup
+    t  := gtime.Microsecond()
+    p  := count/group
+    p  += group - p%group
+    for g := 0; g < group; g++ {
+        ss := g*p + 1
+        se := (g + 1)*p
+        if se > count {
+            se = count
         }
+        wg.Add(1)
+        go func(start, end int) {
+            for i := start; i <= end; i++ {
+                key := []byte("key_" + strconv.Itoa(i))
+                if r, _ := db.Get(key, nil); r == nil {
+                    fmt.Println("TestGet value not found for index:", i)
+                }
+            }
+            wg.Done()
+        }(ss, se)
     }
-    fmt.Println("TestRemoveWithCache:", gtime.Microsecond() - t)
+    wg.Wait()
+    fmt.Println("TestGet:", gtime.Microsecond() - t)
 }
 
 
-
-// 测试不带缓存情况下的数据库写入
-func TestSetWithoutCache(count int) {
-    t := gtime.Microsecond()
-    for i := 0; i < count; i++ {
-        key   := []byte("key_" + strconv.Itoa(i))
-        value := []byte("value_" + strconv.Itoa(i))
-        if err := db.Put(key, value, &opt.WriteOptions{Sync:true}); err != nil {
-            fmt.Println(err)
-        }
-    }
-    fmt.Println("TestSetWithoutCache:", gtime.Microsecond() - t)
-}
-
-// 测试不带缓存情况下的数据库查询
-func TestGetWithoutCache(count int) {
-    t := gtime.Microsecond()
-    for i := 0; i < count; i++ {
-        key := []byte("key_" + strconv.Itoa(i))
-        if r, _ := db.Get(key, nil); r == nil {
-            fmt.Println("TestGetWithoutCache value not found for index:", i)
-        }
-    }
-    fmt.Println("TestGetWithoutCache:", gtime.Microsecond() - t)
-}
-
-// 测试不带缓存情况下的数据库删除
-func TestRemoveWithoutCache(count int) {
-    t := gtime.Microsecond()
-    for i := 0; i < count; i++ {
-        key := []byte("key_" + strconv.Itoa(i))
-        if err := db.Delete(key, &opt.WriteOptions{Sync:true}); err != nil {
-            fmt.Println(err)
-        }
-    }
-    fmt.Println("TestRemoveWithoutCache:", gtime.Microsecond() - t)
-}
 
 func main() {
-    var count int = 0
+    count := 5000000
+    //TestSet(count)
+    //TestGet(count)
+    TestRemove(count)
 
-    //
-    // ==================不带缓存的KV操作=======================
-    //count = 10000
-    //TestSetWithoutCache(count)
-    //TestGetWithoutCache(count)
-    //TestRemoveWithoutCache(count)
-
-    // ==================带缓存的KV操作=======================
-    // 100W性能测试
-    count  = 10000
-    //TestSetWithCache(count)
-    //TestGetWithCache(count)
-    TestRemoveWithCache(count)
 
 }
