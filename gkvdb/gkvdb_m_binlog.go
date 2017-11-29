@@ -11,7 +11,11 @@ type BinLog struct {
 }
 
 // 从binlog文件中恢复未同步数据到memtable中
+// 内部会检测异常数据写入，并忽略异常数据，以便异常数据不会进入到数据库中
 func (db *DB) initFromBinLog() {
+    db.bmu.RLock()
+    defer db.bmu.RUnlock()
+
     blbuffer := gfile.GetBinContents(db.getBinLogFilePath())
     if len(blbuffer) == 0 {
         return
@@ -24,7 +28,7 @@ func (db *DB) initFromBinLog() {
         txidstart := gbinary.DecodeToInt64(buffer[5 : 13])
         txidend   := gbinary.DecodeToInt64(blbuffer[i + 13 + blsize : i + 13 + blsize + 8])
         if txidstart == txidend {
-            // 正常数据
+            // 正常数据，同步到memtable中
             if synced != 1 {
                 tx      := db.binlogBufferToTx(blbuffer[i + 13 : i + 13 + blsize])
                 tx.start = int64(i)
@@ -83,6 +87,10 @@ func (db *DB) addBinLog(txid int64, binlogs []*BinLog) (int64, error) {
         return -1, err
     }
     defer blpf.Close()
+
+    db.bmu.Lock()
+    defer db.bmu.Unlock()
+
     // 写到文件末尾
     start, err := blpf.File().Seek(0, 2)
     if err != nil {
@@ -93,4 +101,21 @@ func (db *DB) addBinLog(txid int64, binlogs []*BinLog) (int64, error) {
         return -1, err
     }
     return start, nil
+}
+
+// 写入磁盘，标识事务已经同步，在对应位置只写入1个字节
+func (db *DB) markTxSynced(tx *Transaction) error {
+    blpf, err := db.blfp.File()
+    if err != nil {
+        return err
+    }
+    defer blpf.Close()
+
+    db.bmu.Lock()
+    defer db.bmu.Unlock()
+
+    if _, err := blpf.File().WriteAt(gbinary.EncodeInt8(1), tx.start); err != nil {
+        return err
+    }
+    return nil
 }

@@ -2,24 +2,23 @@
 package gkvdb
 
 import (
+    "os"
     "time"
     "gitee.com/johng/gf/g/os/gcache"
-    "gitee.com/johng/gf/g/encoding/gbinary"
-    "os"
 )
 
 // 自动保存线程循环
 func (db *DB) startAutoSavingLoop() {
     go func() {
         for !db.isClosed() {
-            db.autoSaving()
+            db.doAutoSaving()
             time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
         }
     }()
 }
 
 // 自动保存binlog的数据到数据表中
-func (db *DB) autoSaving() {
+func (db *DB) doAutoSaving() {
     key := "auto_saving_cache_key_for_" + db.path + db.name
     if gcache.Get(key) != nil {
         return
@@ -44,17 +43,4 @@ func (db *DB) autoSaving() {
             os.Truncate(db.getBinLogFilePath(), 0)
         }
     }
-}
-
-// 写入磁盘，标识事务已经同步，在对应位置只写入1个字节
-func (db *DB) markTxSynced(tx *Transaction) error {
-    blpf, err := db.blfp.File()
-    if err != nil {
-        return err
-    }
-    defer blpf.Close()
-    if _, err := blpf.File().WriteAt(gbinary.EncodeInt8(1), tx.start); err != nil {
-        return err
-    }
-    return nil
 }
