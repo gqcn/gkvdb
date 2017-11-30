@@ -42,13 +42,16 @@ func (db *DB) doAutoSaving() error {
             }
         } else {
             // 如果所有的事务数据已经同步完成，那么矫正binblog文件大小
+            db.bmu.Lock()
             binlogPath := db.getBinLogFilePath()
             if gfile.Size(binlogPath) > 0 {
-                //fmt.Println("truncate")
+                db.memt.clear()
                 os.Truncate(db.getBinLogFilePath(), 0)
             }
+            db.bmu.Unlock()
             break
         }
+
     }
     return nil
 }

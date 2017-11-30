@@ -152,8 +152,8 @@ func New(path, name string) (*DB, error) {
     // 自检并初始化相关服务
     db.initFileSpace()
     db.initFromBinLog()
-    db.startAutoSavingLoop()
-    db.startAutoCompactingLoop()
+    //db.startAutoSavingLoop()
+    //db.startAutoCompactingLoop()
     return db, nil
 }
 

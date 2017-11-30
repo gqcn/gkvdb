@@ -8,20 +8,14 @@ import (
 
 // 事务操作对象
 type Transaction struct {
-    mu        sync.RWMutex          // 并发互斥锁
-    db        *DB                   // 所属数据库
-    id        int64                 // 事务编号
-    start     int64                 // BinLog文件开始位置
-    items     []*TransactionItem    // BinLog数据，保证写入顺序
-    datamap   map[string][]byte     // 事务内部的KV映射表，便于事务查询
-    committed bool                  // 事务是否已经提交到binlog文件
+    mu        sync.RWMutex         // 并发互斥锁
+    db        *DB                  // 所属数据库
+    id        int64                // 事务编号
+    start     int64                // BinLog文件开始位置
+    datamap   map[string][]byte    // 事务内部的KV映射表，便于事务查询
+    committed bool                 // 事务是否已经提交到binlog文件
 }
 
-// 事务数据项
-type TransactionItem struct {
-    k []byte
-    v []byte
-}
 
 // 创建一个事务
 func (db *DB) Begin() *Transaction {
@@ -34,7 +28,6 @@ func (db *DB) newTransaction() *Transaction {
         db      : db,
         id      : db.txid(),
         start   : -1,
-        items   : make([]*TransactionItem, 0),
         datamap : make(map[string][]byte),
     }
     return tx
@@ -61,7 +54,6 @@ func (tx *Transaction) Set(key, value []byte) *Transaction {
     if tx.committed {
         tx.reset()
     }
-    tx.items                = append(tx.items, &TransactionItem{key, value})
     tx.datamap[string(key)] = value
     return tx
 }
@@ -85,7 +77,6 @@ func (tx *Transaction) Remove(key []byte) *Transaction {
     if tx.committed {
         tx.reset()
     }
-    tx.items                = append(tx.items, &TransactionItem{key, nil})
     tx.datamap[string(key)] = nil
     return tx
 }
@@ -95,7 +86,7 @@ func (tx *Transaction) Commit() error {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
-    if len(tx.items) == 0 || tx.committed {
+    if len(tx.datamap) == 0 || tx.committed {
         return nil
     }
     // 先写Binlog
@@ -122,7 +113,6 @@ func (tx *Transaction) copy() *Transaction {
     newtx          := tx.db.newTransaction()
     newtx.id        = tx.id
     newtx.start     = tx.start
-    newtx.items     = tx.items
     newtx.datamap   = tx.datamap
     newtx.committed = tx.committed
     return newtx
@@ -132,7 +122,6 @@ func (tx *Transaction) copy() *Transaction {
 func (tx *Transaction) reset() {
     tx.id        = tx.db.txid()
     tx.start     = -1
-    tx.items     = make([]*TransactionItem, 0)
     tx.datamap   = make(map[string][]byte)
     tx.committed = false
 }
@@ -147,13 +136,13 @@ func (tx *Transaction) sync() error {
         return errors.New("uncommitted transaction")
     }
 
-    for _, item := range tx.items {
-        if len(item.v) == 0 {
-            if err := tx.db.remove(item.k); err != nil {
+    for k, v := range tx.datamap {
+        if len(v) == 0 {
+            if err := tx.db.remove([]byte(k)); err != nil {
                 return err
             }
         } else {
-            if err := tx.db.set(item.k, item.v); err != nil {
+            if err := tx.db.set([]byte(k), v); err != nil {
                 return err
             }
         }

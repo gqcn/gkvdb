@@ -4,20 +4,22 @@ import "sync"
 
 // 内存表,需要结合binlog一起使用
 type MemTable struct {
-    mu     sync.RWMutex          // 并发互斥锁
-    db     *DB                   // 所属数据库
-    data   map[string][]byte     // 临时BinLog数据，便于直接检索KV数据
-    txids  []int                 // 事务编号列表，便于从小到大检索事务数据
-    txdata map[int]*Transaction  // 事务编号对应的BinLog列表，这里的事务对象只是内存表内部使用，不存在并发安全问题
+    mu      sync.RWMutex            // 并发互斥锁
+    db      *DB                     // 所属数据库
+    datamap map[string]MemTableItem // 键名与事务对象指针的映射，便于通过键名直接查找事务对象，最新的操作会对老的键名进行覆盖
+}
+
+// 由于键值可能会很大，所以这里只存放键名和键值的地址
+type MemTableItem struct{
+    vlen  int   // 键值长度
+    start int64 // 键值在binlog文件中的开始位置
 }
 
 // 创建一个MemTable
 func newMemTable(db *DB) *MemTable {
     return &MemTable {
-        db     : db,
-        data   : make(map[string][]byte),
-        txids  : make([]int, 0),
-        txdata : make(map[int]*Transaction),
+        db      : db,
+        datamap : make(map[string]MemTableItem),
     }
 }
 
@@ -27,12 +29,12 @@ func (table *MemTable) set(tx *Transaction) error {
     defer table.mu.Unlock()
 
     txid := int(tx.id)
-    if _, ok := table.txdata[txid]; !ok {
-        table.txdata[txid] = tx
-        table.txids        = append(table.txids, txid)
+    if _, ok := table.txidmap[txid]; !ok {
+        table.txids         = append(table.txids, txid)
+        table.txidmap[txid] = tx
     }
-    for _, item := range tx.items {
-        table.data[string(item.k)] = item.v
+    for k, _ := range tx.datamap {
+        table.txkvmap[k] = tx
     }
     return nil
 }
@@ -42,11 +44,12 @@ func (table *MemTable) get(key []byte) ([]byte, bool) {
     table.mu.RLock()
     defer table.mu.RUnlock()
 
-    if v, ok := table.data[string(key)]; ok {
-        if len(v) == 0 {
+    if tx, ok := table.txkvmap[string(key)]; ok {
+        value := tx.Get(key)
+        if len(value) == 0 {
             return nil, true
         } else {
-            return v, true
+            return value, true
         }
     }
     return nil, false
@@ -61,7 +64,7 @@ func (table *MemTable) getMinTx() *Transaction {
         return nil
     }
     txid := table.txids[0]
-    if tx, ok := table.txdata[txid]; ok {
+    if tx, ok := table.txidmap[txid]; ok {
         return tx
     }
     return nil
@@ -78,25 +81,26 @@ func (table *MemTable) removeMinTx() {
     defer table.mu.Unlock()
 
     table.txids = table.txids[1:]
-    delete(table.txdata, int(tx.id))
-    for _, item := range tx.items {
-        delete(table.data, string(item.k))
-    }
+    delete(table.txidmap, int(tx.id))
 }
 
 // 返回指定大小的键值对列表
 func (table *MemTable) items(max int) map[string][]byte {
     table.mu.RLock()
     defer table.mu.RUnlock()
-    if len(table.data) >= max {
-        return table.data
-    }
     m := make(map[string][]byte)
-    for k, v := range table.data {
-        m[k] = v
+    for k, tx := range table.txkvmap {
+        m[k] = tx.Get([]byte(k))
         if len(m) == max {
             break
         }
     }
     return m
+}
+
+// 同步缓存的binlog数据到底层数据库文件
+func (table *MemTable) clear() {
+    table.txids   = make([]int, 0)
+    table.txidmap = make(map[int]*Transaction)
+    table.txkvmap = make(map[string]*Transaction)
 }

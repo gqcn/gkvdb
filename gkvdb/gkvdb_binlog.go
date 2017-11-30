@@ -3,26 +3,25 @@ package gkvdb
 import (
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/util/gtime"
+    "fmt"
 )
 
 // 从binlog文件中恢复未同步数据到memtable中
 // 内部会检测异常数据写入，并忽略异常数据，以便异常数据不会进入到数据库中
 func (db *DB) initFromBinLog() {
     db.bmu.RLock()
-    defer db.bmu.RUnlock()
-
     blbuffer := gfile.GetBinContents(db.getBinLogFilePath())
+    db.bmu.RUnlock()
+
     if len(blbuffer) == 0 {
         return
     }
+    t1 := gtime.Microsecond()
     // 在异常数据下，需要花费更多的时间进行数据纠正(字节不断递增计算下一条正确的binlog位置)
     for i := 0; i < len(blbuffer); {
         buffer := blbuffer[i : i + 13]
         synced := int(gbinary.DecodeToInt8(buffer[0 : 1]))
-        if synced < 0 || synced > 1 {
-            i++
-            continue
-        }
         blsize := int(gbinary.DecodeToInt32(buffer[1 : 5]))
         if i + 13 + blsize + 8 > len(blbuffer) {
             i++
@@ -35,7 +34,7 @@ func (db *DB) initFromBinLog() {
             continue
         } else {
             // 正常数据，同步到memtable中
-            if synced != 1 {
+            if synced == 0 {
                 tx      := db.binlogBufferToTx(blbuffer[i + 13 : i + 13 + blsize])
                 tx.start = int64(i)
                 db.memt.set(tx)
@@ -43,6 +42,7 @@ func (db *DB) initFromBinLog() {
             i += 13 + blsize + 8
         }
     }
+    fmt.Println(gtime.Microsecond() - t1)
 }
 
 // 将二进制数据转换为事务对象
@@ -71,14 +71,15 @@ func (db *DB) addBinLogByTx(tx *Transaction) (int64, error) {
     buffer  = append(buffer, gbinary.EncodeInt64(tx.id)...)
     // 数据列表
     blsize := 0
-    for _, item := range tx.items {
+    for ks, v := range tx.datamap {
+        k      := []byte(ks)
         bits   := make([]gbinary.Bit, 0)
-        bits    = gbinary.EncodeBits(bits, uint(len(item.k)),   8)
-        bits    = gbinary.EncodeBits(bits, uint(len(item.v)),  24)
+        bits    = gbinary.EncodeBits(bits, uint(len(k)),   8)
+        bits    = gbinary.EncodeBits(bits, uint(len(v)),  24)
         buffer  = append(buffer, gbinary.EncodeBitsToBytes(bits)...)
-        buffer  = append(buffer, item.k...)
-        buffer  = append(buffer, item.v...)
-        blsize += 4 + len(item.k) + len(item.v)
+        buffer  = append(buffer, k...)
+        buffer  = append(buffer, v...)
+        blsize += 4 + len(k) + len(v)
     }
     // 事务结束
     buffer  = append(buffer, gbinary.EncodeInt64(tx.id)...)
