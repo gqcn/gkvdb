@@ -102,7 +102,6 @@ fmt.Println(db.Values(-1))
 
 ## 文档
 1. [gkvdb的介绍及设计](http://johng.cn/gkvdb-brief/)
-1. [gkvdb v1.0的性能测试及与leveldb、boltdb性能对比](http://johng.cn/gkvdb-performance-test/)
 1. [gkvdb v1.5的性能测试及与leveldb的性能对比](http://johng.cn/gkvdb-performance-test-1-5/)
 
 
