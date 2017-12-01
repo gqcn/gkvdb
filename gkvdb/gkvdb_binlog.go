@@ -68,14 +68,15 @@ func (binlog *BinLog) initFromFile() {
         txidstart := gbinary.DecodeToInt64(buffer[5 : 13])
         txidend   := gbinary.DecodeToInt64(blbuffer[i + 13 + blsize : i + 13 + blsize + 8])
         if txidstart != txidend {
+            fmt.Println("invalid", i)
             i++
             continue
         } else {
             // 正常数据，同步到memtable中
             if synced == 0 {
-                tx := binlog.binlogBufferToTx(blbuffer[i + 13 : i + 13 + blsize])
-                binlog.queue.PushFront(BinLogItem{int64(i), tx.datamap})
-                binlog.db.memt.set(tx.datamap)
+                datamap := binlog.binlogBufferToDataMap(blbuffer[i + 13 : i + 13 + blsize])
+                binlog.queue.PushFront(BinLogItem{int64(i), datamap})
+                binlog.db.memt.set(datamap)
             }
             i += 13 + blsize + 8
         }
@@ -84,18 +85,18 @@ func (binlog *BinLog) initFromFile() {
 }
 
 // 将二进制数据转换为事务对象
-func (binlog *BinLog) binlogBufferToTx(buffer []byte) *Transaction {
-    tx := binlog.db.newTransaction()
+func (binlog *BinLog) binlogBufferToDataMap(buffer []byte) map[string][]byte {
+    m := make(map[string][]byte)
     for i := 0; i < len(buffer); {
         bits  := gbinary.DecodeBytesToBits(buffer[i : i + 4])
         klen  := int(gbinary.DecodeBits(bits[0 : 8]))
         vlen  := int(gbinary.DecodeBits(bits[8 : 32]))
         key   := buffer[i + 4 : i + 4 + klen]
         value := buffer[i + 4 + klen : i + 4 + klen + vlen]
-        tx.Set(key, value)
+        m[string(key)] = value
         i += 4 + klen + vlen
     }
-    return tx
+    return m
 }
 
 // 添加binlog到文件，支持批量添加

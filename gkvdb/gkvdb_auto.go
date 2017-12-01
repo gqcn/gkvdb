@@ -33,7 +33,7 @@ func (db *DB) startAutoSyncingLoop() {
             if err := db.doAutoSyncing(); err != nil {
                 glog.Error(err)
             }
-            time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
+            time.Sleep(gBINLOG_AUTO_SYNCING*time.Millisecond)
         }
     }()
 }
