@@ -1,9 +1,8 @@
 package gkvdb
 
 import (
-    "gitee.com/johng/gf/g/util/gtime"
     "sync"
-    "errors"
+    "gitee.com/johng/gf/g/util/gtime"
 )
 
 // 事务操作对象
@@ -11,11 +10,8 @@ type Transaction struct {
     mu        sync.RWMutex         // 并发互斥锁
     db        *DB                  // 所属数据库
     id        int64                // 事务编号
-    start     int64                // BinLog文件开始位置
     datamap   map[string][]byte    // 事务内部的KV映射表，便于事务查询
-    committed bool                 // 事务是否已经提交到binlog文件
 }
-
 
 // 创建一个事务
 func (db *DB) Begin() *Transaction {
@@ -27,7 +23,6 @@ func (db *DB) newTransaction() *Transaction {
     tx := &Transaction {
         db      : db,
         id      : db.txid(),
-        start   : -1,
         datamap : make(map[string][]byte),
     }
     return tx
@@ -37,23 +32,11 @@ func (db *DB) newTransaction() *Transaction {
 func (db *DB) txid() int64 {
     return gtime.Nanosecond()
 }
-
-// 标识为已提交到binlog
-func (tx *Transaction) setAsCommitted() {
-    tx.mu.Lock()
-    defer tx.mu.Unlock()
-
-    tx.committed = true
-}
-
 // 添加数据
 func (tx *Transaction) Set(key, value []byte) *Transaction {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
-    if tx.committed {
-        tx.reset()
-    }
     tx.datamap[string(key)] = value
     return tx
 }
@@ -74,9 +57,6 @@ func (tx *Transaction) Remove(key []byte) *Transaction {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
-    if tx.committed {
-        tx.reset()
-    }
     tx.datamap[string(key)] = nil
     return tx
 }
@@ -86,18 +66,17 @@ func (tx *Transaction) Commit() error {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
-    if len(tx.datamap) == 0 || tx.committed {
+    if len(tx.datamap) == 0 {
         return nil
     }
     // 先写Binlog
-    start, err := tx.db.addBinLogByTx(tx)
-    if err != nil {
+    if err := tx.db.binlog.writeByTx(tx); err != nil {
         return err
     }
-    tx.start     = start
-    tx.committed = true
-    // 再写内存表，这里创建一个新的变量，内存表中保存的事务指针是该变量的指针
-    tx.db.memt.set(tx.copy())
+    // 再写内存表
+    tx.db.memt.set(tx.datamap)
+    // 重置事务
+    tx.reset()
     return nil
 }
 
@@ -105,47 +84,12 @@ func (tx *Transaction) Commit() error {
 func (tx *Transaction) Rollback() {
     tx.mu.Lock()
     defer tx.mu.Unlock()
+    // 重置事务
     tx.reset()
-}
-
-// 创建一个事务的拷贝(数据拷贝)
-func (tx *Transaction) copy() *Transaction {
-    newtx          := tx.db.newTransaction()
-    newtx.id        = tx.id
-    newtx.start     = tx.start
-    newtx.datamap   = tx.datamap
-    newtx.committed = tx.committed
-    return newtx
 }
 
 // 重置事务(内部调用)
 func (tx *Transaction) reset() {
     tx.id        = tx.db.txid()
-    tx.start     = -1
     tx.datamap   = make(map[string][]byte)
-    tx.committed = false
-}
-
-// 将事务事务同步到磁盘
-// 注意，必须先要保证该数据已经commit到binlog文件中
-func (tx *Transaction) sync() error {
-    tx.mu.RLock()
-    defer tx.mu.RUnlock()
-
-    if !tx.committed {
-        return errors.New("uncommitted transaction")
-    }
-
-    for k, v := range tx.datamap {
-        if len(v) == 0 {
-            if err := tx.db.remove([]byte(k)); err != nil {
-                return err
-            }
-        } else {
-            if err := tx.db.set([]byte(k), v); err != nil {
-                return err
-            }
-        }
-    }
-    return nil
 }

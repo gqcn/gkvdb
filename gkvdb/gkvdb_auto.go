@@ -26,6 +26,65 @@ func (db *DB) startAutoCompactingLoop() {
     }()
 }
 
+// 开启自动同步线程
+func (db *DB) startAutoSyncingLoop() {
+    go func() {
+        for !db.isClosed() {
+            if err := db.doAutoSyncing(); err != nil {
+                glog.Error(err)
+            }
+            time.Sleep(gAUTO_SAVING_TIMEOUT*time.Millisecond)
+        }
+    }()
+}
+
+// 自动同步binlog的数据到数据表中
+func (db *DB) doAutoSyncing() error {
+    key := "auto_syncing_cache_key_for_" + db.path + db.name
+    if gcache.Get(key) != nil {
+        return nil
+    }
+    gcache.Set(key, struct{}{}, 86400)
+    defer gcache.Remove(key)
+
+    // 如果没有可同步的数据，那么立即返回
+    if db.binlog.queue.Len() == 0 {
+        return nil
+    }
+
+    for {
+        if v := db.binlog.queue.PopBack(); v != nil {
+            item := v.(BinLogItem)
+            for k, v := range item.datamap {
+                if len(v) == 0 {
+                    if err := db.remove([]byte(k)); err != nil {
+                        db.binlog.queue.PushBack(item)
+                        return err
+                    }
+                } else {
+                    if err := db.set([]byte(k), v); err != nil {
+                        db.binlog.queue.PushBack(item)
+                        return err
+                    }
+                }
+            }
+            db.binlog.markTxSynced(item.txstart)
+        } else {
+            // 如果所有的事务数据已经同步完成，那么矫正binblog文件大小
+            binlogPath := db.getBinLogFilePath()
+            db.binlog.Lock()
+            if gfile.Size(binlogPath) > 0 {
+                db.memt.clear()
+                os.Truncate(binlogPath, 0)
+            }
+            db.binlog.Unlock()
+            break
+        }
+
+    }
+    return nil
+}
+
 // 数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
 func (db *DB) autoCompactingData() error {
     key := "auto_compacting_data_cache_key_for_" + db.path + db.name

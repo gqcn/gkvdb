@@ -39,7 +39,7 @@ const (
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
-    gAUTO_SAVING_TIMEOUT     = 5000                     // 自动同步到磁盘的时间(毫秒)
+    gAUTO_SAVING_TIMEOUT     = 100                      // 自动同步到磁盘的时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 1024                     // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
 )
@@ -47,7 +47,6 @@ const (
 // KV数据库
 type DB struct {
     mu      sync.RWMutex      // API互斥锁
-    bmu     sync.RWMutex      // BinLog互斥锁(内部使用)
 
     path    string            // 数据文件存放目录路径
     name    string            // 数据文件名
@@ -55,11 +54,11 @@ type DB struct {
     ixfp    *gfilepool.Pool   // 索引文件打开指针池(用以高并发下的IO复用)
     mtfp    *gfilepool.Pool   // 元数据文件打开指针池(元数据，包含索引信息和部分数据信息)
     dbfp    *gfilepool.Pool   // 数据文件打开指针池
-    blfp    *gfilepool.Pool   // binlog文件打开指针池
 
     mtsp    *gfilespace.Space // 元数据文件碎片管理
     dbsp    *gfilespace.Space // 数据文件碎片管理器
     memt    *MemTable         // MemTable
+    binlog  *BinLog           // BinLog
     closed  int32             // 数据库是否关闭，以便异步线程进行判断处理
 }
 
@@ -120,11 +119,17 @@ func New(path, name string) (*DB, error) {
     }
     db.memt = newMemTable(db)
 
+    // 初始化BinLog
+    if binlog, err := newBinLog(db); err != nil {
+        return nil, err
+    } else {
+        db.binlog = binlog
+    }
+
     // 索引/数据文件权限检测
     ixpath := db.getIndexFilePath()
     mtpath := db.getMetaFilePath()
     dbpath := db.getDataFilePath()
-    blpath := db.getBinLogFilePath()
     if gfile.Exists(ixpath) && (!gfile.IsWritable(ixpath) || !gfile.IsReadable(ixpath)){
         return nil, errors.New("permission denied to index file: " + ixpath)
     }
@@ -134,15 +139,12 @@ func New(path, name string) (*DB, error) {
     if gfile.Exists(dbpath) && (!gfile.IsWritable(dbpath) || !gfile.IsReadable(dbpath)){
         return nil, errors.New("permission denied to data file: " + dbpath)
     }
-    if gfile.Exists(blpath) && (!gfile.IsWritable(blpath) || !gfile.IsReadable(blpath)){
-        return nil, errors.New("permission denied to binlog file: " + blpath)
-    }
+
 
     // 创建文件指针池
     db.ixfp = gfilepool.New(ixpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
     db.mtfp = gfilepool.New(mtpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
     db.dbfp = gfilepool.New(dbpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
-    db.blfp = gfilepool.New(blpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
 
     // 初始化索引文件内容
     if gfile.Size(ixpath) == 0 {
@@ -151,9 +153,9 @@ func New(path, name string) (*DB, error) {
 
     // 自检并初始化相关服务
     db.initFileSpace()
-    db.initFromBinLog()
-    //db.startAutoSavingLoop()
-    //db.startAutoCompactingLoop()
+    db.binlog.initFromFile()
+    db.startAutoSyncingLoop()
+    db.startAutoCompactingLoop()
     return db, nil
 }
 
@@ -178,7 +180,7 @@ func (db *DB) close() {
     db.ixfp.Close()
     db.mtfp.Close()
     db.dbfp.Close()
-    db.blfp.Close()
+    db.binlog.close()
     atomic.StoreInt32(&db.closed, 1)
 }
 
