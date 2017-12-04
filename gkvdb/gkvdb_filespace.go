@@ -8,28 +8,28 @@ import (
 )
 
 // 初始化碎片管理器
-func (db *DB) initFileSpace() {
-    db.mtsp = gfilespace.New()
-    db.dbsp = gfilespace.New()
+func (table *Table) initFileSpace() {
+    table.mtsp = gfilespace.New()
+    table.dbsp = gfilespace.New()
     // 异步计算碎片详情
-    go db.recountFileSpace()
+    go table.recountFileSpace()
 }
 
 // 重新计算空间碎片信息
 // 必须锁起来防止数据变动引起计算不准确从而影响数据正确性
-func (db *DB) recountFileSpace() {
-    db.mu.Lock()
-    defer db.mu.Unlock()
+func (table *Table) recountFileSpace() {
+    table.mu.Lock()
+    defer table.mu.Unlock()
 
-    mtpf, _ := db.mtfp.File()
+    mtpf, _ := table.mtfp.File()
     defer mtpf.Close()
 
-    dbpf, _ := db.dbfp.File()
+    dbpf, _ := table.dbfp.File()
     defer dbpf.Close()
 
     usedmtsp := gfilespace.New()
     useddbsp := gfilespace.New()
-    ixbuffer := gfile.GetBinContents(db.getIndexFilePath())
+    ixbuffer := gfile.GetBinContents(table.getIndexFilePath())
 
     // 并发计算碎片
     var wg sync.WaitGroup
@@ -57,7 +57,7 @@ func (db *DB) recountFileSpace() {
                 mtindex := int64(gbinary.DecodeBits(bits[0 : 36]))*gMETA_BUCKET_SIZE
                 mtsize  := int(gbinary.DecodeBits(bits[36 : 55]))*gMETA_ITEM_SIZE
                 if mtsize > 0 {
-                    mtsp.AddBlock(int(mtindex), db.getMetaCapBySize(mtsize))
+                    mtsp.AddBlock(int(mtindex), getMetaCapBySize(mtsize))
                     // 获取数据列表
                     if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtindex, mtindex + int64(mtsize)); mtbuffer != nil {
                         for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
@@ -65,7 +65,7 @@ func (db *DB) recountFileSpace() {
                             bits    := gbinary.DecodeBytesToBits(buffer)
                             klen    := int(gbinary.DecodeBits(bits[64 : 72]))
                             vlen    := int(gbinary.DecodeBits(bits[72 : 96]))
-                            dbcap   := db.getDataCapBySize(klen + vlen + 1)
+                            dbcap   := getDataCapBySize(klen + vlen + 1)
                             dbindex := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
                             if dbcap > 0 {
                                 dbsp.AddBlock(int(dbindex), dbcap)
@@ -93,24 +93,24 @@ func (db *DB) recountFileSpace() {
     end, _ := mtpf.File().Seek(0, 2)
     for _, v := range usedmtsp.GetAllBlocks() {
         if v.Index() > start {
-            db.mtsp.AddBlock(start, v.Index() - start)
+            table.mtsp.AddBlock(start, v.Index() - start)
         }
         start = v.Index() + v.Size()
     }
     if start < int(end) {
-        db.mtsp.AddBlock(start, int(end) - start)
+        table.mtsp.AddBlock(start, int(end) - start)
     }
     // 计算数据碎片
     start  = 0
     end, _ = dbpf.File().Seek(0, 2)
     for _, v := range useddbsp.GetAllBlocks() {
         if v.Index() > start {
-            db.dbsp.AddBlock(start, v.Index() - start)
+            table.dbsp.AddBlock(start, v.Index() - start)
         }
         start = v.Index() + v.Size()
     }
     if start < int(end) {
-        db.dbsp.AddBlock(start, int(end) - start)
+        table.dbsp.AddBlock(start, int(end) - start)
     }
     //fmt.Println("used mtsp:", len(usedmtsp.GetAllBlocks()))
     //fmt.Println("used dbsp:", len(useddbsp.GetAllBlocks()))
@@ -122,29 +122,29 @@ func (db *DB) recountFileSpace() {
     //os.Exit(1)
 }
 
-func (db *DB) getMtFileSpaceMaxSize() int {
-    return db.mtsp.GetMaxSize()
+func (table *Table) getMtFileSpaceMaxSize() int {
+    return table.mtsp.GetMaxSize()
 }
 
-func (db *DB) getDbFileSpaceMaxSize() int {
-    return db.dbsp.GetMaxSize()
+func (table *Table) getDbFileSpaceMaxSize() int {
+    return table.dbsp.GetMaxSize()
 }
 
 // 元数据碎片
-func (db *DB) addMtFileSpace(index int, size int) {
-    db.mtsp.AddBlock(index, size)
+func (table *Table) addMtFileSpace(index int, size int) {
+    table.mtsp.AddBlock(index, size)
 }
 
-func (db *DB) getMtFileSpace(size int) int64 {
-    i, s := db.mtsp.GetBlock(size)
+func (table *Table) getMtFileSpace(size int) int64 {
+    i, s := table.mtsp.GetBlock(size)
     if i >= 0 {
         extra := int(s - size)
         if extra > 0 {
-            db.mtsp.AddBlock(i + int(size), extra)
+            table.mtsp.AddBlock(i + int(size), extra)
         }
         return int64(i)
     } else {
-        pf, err := db.mtfp.File()
+        pf, err := table.mtfp.File()
         if err != nil {
             return -1
         }
@@ -160,20 +160,20 @@ func (db *DB) getMtFileSpace(size int) int64 {
 }
 
 // 数据碎片
-func (db *DB) addDbFileSpace(index int, size int) {
-    db.dbsp.AddBlock(index, size)
+func (table *Table) addDbFileSpace(index int, size int) {
+    table.dbsp.AddBlock(index, size)
 }
 
-func (db *DB) getDbFileSpace(size int) int64 {
-    i, s := db.dbsp.GetBlock(size)
+func (table *Table) getDbFileSpace(size int) int64 {
+    i, s := table.dbsp.GetBlock(size)
     if i >= 0 {
         extra := s - size
         if extra > 0 {
-            db.dbsp.AddBlock(i + int(size), extra)
+            table.dbsp.AddBlock(i + int(size), extra)
         }
         return int64(i)
     } else {
-        pf, err := db.dbfp.File()
+        pf, err := table.dbfp.File()
         if err != nil {
             return -1
         }

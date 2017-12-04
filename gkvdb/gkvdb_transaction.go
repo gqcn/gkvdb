@@ -3,14 +3,15 @@ package gkvdb
 import (
     "sync"
     "gitee.com/johng/gf/g/util/gtime"
+    "gitee.com/johng/gf/g/container/gmap"
 )
 
 // 事务操作对象
 type Transaction struct {
-    mu        sync.RWMutex         // 并发互斥锁
-    db        *DB                  // 所属数据库
-    id        int64                // 事务编号
-    datamap   map[string][]byte    // 事务内部的KV映射表，便于事务查询
+    mu     sync.RWMutex                 // 并发互斥锁
+    db     *DB                          // 所属数据库
+    id     int64                        // 事务编号
+    tables map[string]map[string][]byte // 事务数据项，键名为表名，键值为对应表的键值对数据
 }
 
 // 创建一个事务
@@ -21,9 +22,9 @@ func (db *DB) Begin() *Transaction {
 // 创建一个事务对象
 func (db *DB) newTransaction() *Transaction {
     tx := &Transaction {
-        db      : db,
-        id      : db.txid(),
-        datamap : make(map[string][]byte),
+        db     : db,
+        id     : db.txid(),
+        tables : make(map[string]map[string][]byte),
     }
     return tx
 }
@@ -32,33 +33,48 @@ func (db *DB) newTransaction() *Transaction {
 func (db *DB) txid() int64 {
     return gtime.Nanosecond()
 }
+
 // 添加数据
 func (tx *Transaction) Set(key, value []byte) *Transaction {
+    return tx.SetTo(key, value, gDEFAULT_TABLE_NAME)
+}
+
+// 添加数据(针对数据表)
+func (tx *Transaction) SetTo(key, value []byte, table string) *Transaction {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
-    tx.datamap[string(key)] = value
+    if _, ok := tx.tables[table]; !ok {
+        tx.tables[table] = make(map[string][]byte)
+    }
+    tx.tables[table][string(key)] = value
     return tx
 }
 
 // 查询数据
 func (tx *Transaction) Get(key []byte) []byte {
+    return tx.GetFrom(key, gDEFAULT_TABLE_NAME)
+}
+
+// 查询数据(针对数据表)
+func (tx *Transaction) GetFrom(key []byte, table string) []byte {
     tx.mu.RLock()
     defer tx.mu.RUnlock()
 
-    if v, ok := tx.datamap[string(key)]; ok {
-        return v
+    if _, ok := tx.tables[table]; ok {
+        return tx.tables[table][string(key)]
     }
     return tx.db.Get(key)
 }
 
 // 删除数据
 func (tx *Transaction) Remove(key []byte) *Transaction {
-    tx.mu.Lock()
-    defer tx.mu.Unlock()
+    return tx.RemoveFrom(key, gDEFAULT_TABLE_NAME)
+}
 
-    tx.datamap[string(key)] = nil
-    return tx
+// 删除数据(针对数据表)
+func (tx *Transaction) RemoveFrom(key []byte, table string) *Transaction {
+    return tx.SetTo(key, nil, table)
 }
 
 // 提交数据
@@ -66,15 +82,19 @@ func (tx *Transaction) Commit() error {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
-    if len(tx.datamap) == 0 {
+    if len(tx.tables) == 0 {
         return nil
     }
     // 先写Binlog
     if err := tx.db.binlog.writeByTx(tx); err != nil {
         return err
     }
-    // 再写内存表
-    tx.db.memt.set(tx.datamap)
+    // 再写内存表(分别写入到对应表的memtable中)
+    for n, m := range tx.tables {
+        if table := tx.db.getTable(n); table != nil {
+            table.memt.set(m)
+        }
+    }
     // 重置事务
     tx.reset()
     return nil
@@ -90,6 +110,6 @@ func (tx *Transaction) Rollback() {
 
 // 重置事务(内部调用)
 func (tx *Transaction) reset() {
-    tx.id        = tx.db.txid()
-    tx.datamap   = make(map[string][]byte)
+    tx.id     = tx.db.txid()
+    tx.tables = make(map[string]map[string][]byte)
 }

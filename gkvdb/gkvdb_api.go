@@ -64,11 +64,6 @@ func (db *DB) Values(max int) [][]byte {
     return values
 }
 
-// 关闭数据库链接
-func (db *DB) Close() {
-    db.close()
-}
-
 // 打印数据库状态(调试使用)
 //func (db *DB) PrintState() {
 //    mtblocks := db.mtsp.GetAllBlocks()

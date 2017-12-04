@@ -7,19 +7,22 @@ import (
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
     "gitee.com/johng/gf/g/os/glog"
+    "sync"
+    "sync/atomic"
+    "github.com/syndtr/goleveldb/leveldb/table"
 )
 
 // 数据文件自动整理
-func (db *DB) startAutoCompactingLoop() {
+func (table *Table) startAutoCompactingLoop() {
     go func() {
-        for !db.isClosed() {
-            if err := db.autoCompactingData(); err != nil {
+        for !table.isClosed() {
+            if err := table.autoCompactingData(); err != nil {
                 glog.Error(err)
-                time.Sleep(time.Minute)
+                time.Sleep(time.Second)
             }
-            if err := db.autoCompactingMeta(); err != nil {
+            if err := table.autoCompactingMeta(); err != nil {
                 glog.Error(err)
-                time.Sleep(time.Minute)
+                time.Sleep(time.Second)
             }
             time.Sleep(gAUTO_COMPACTING_TIMEOUT*time.Millisecond)
         }
@@ -30,45 +33,68 @@ func (db *DB) startAutoCompactingLoop() {
 func (db *DB) startAutoSyncingLoop() {
     go func() {
         for !db.isClosed() {
-            if err := db.doAutoSyncing(); err != nil {
-                glog.Error(err)
-            }
+            db.doAutoSyncing()
             time.Sleep(gBINLOG_AUTO_SYNCING*time.Millisecond)
         }
     }()
 }
 
-// 自动同步binlog的数据到数据表中
-func (db *DB) doAutoSyncing() error {
-    key := "auto_syncing_cache_key_for_" + db.path + db.name
+// 自动同步binlog的数据到对应数据表中
+func (db *DB) doAutoSyncing() {
+    key := "auto_syncing_cache_key_for_" + db.path
     if gcache.Get(key) != nil {
-        return nil
+        return
     }
     gcache.Set(key, struct{}{}, 86400)
     defer gcache.Remove(key)
 
     // 如果没有可同步的数据，那么立即返回
     if db.binlog.queue.Len() == 0 {
-        return nil
+        return
     }
 
     for {
         if v := db.binlog.queue.PopBack(); v != nil {
+            var wg sync.WaitGroup
             item := v.(BinLogItem)
-            for k, v := range item.datamap {
-                if len(v) == 0 {
-                    if err := db.remove([]byte(k)); err != nil {
-                        db.binlog.queue.PushBack(item)
-                        return err
+            done := int32(0)
+            for n, m := range item.datamap {
+                wg.Add(1)
+                // 不同的数据表异步执行数据保存
+                go func(n string, m map[string][]byte) {
+                    defer wg.Done()
+                    table := db.getTable(n)
+                    for k, v := range m {
+                        if atomic.LoadInt32(&done) < 0 {
+                            return
+                        }
+                        if len(v) == 0 {
+                            if err := table.remove([]byte(k)); err != nil {
+                                atomic.StoreInt32(&done, -1)
+                                glog.Error(err)
+                                time.Sleep(time.Second)
+                                return
+                            }
+                        } else {
+                            if err := table.set([]byte(k), v); err != nil {
+                                db.binlog.queue.PushBack(item)
+                                atomic.StoreInt32(&done, -1)
+                                glog.Error(err)
+                                time.Sleep(time.Second)
+                                return
+                            }
+                        }
                     }
-                } else {
-                    if err := db.set([]byte(k), v); err != nil {
-                        db.binlog.queue.PushBack(item)
-                        return err
-                    }
-                }
+
+                }(n, m)
             }
-            db.binlog.markTxSynced(item.txstart)
+            wg.Wait()
+            // 同步失败，重新推入队列
+            if done < 0 {
+                db.binlog.queue.PushBack(item)
+            } else {
+                db.binlog.markTxSynced(item.txstart)
+            }
         } else {
             // 如果所有的事务数据已经同步完成，那么矫正binblog文件大小
             binlogPath := db.getBinLogFilePath()
@@ -82,35 +108,36 @@ func (db *DB) doAutoSyncing() error {
         }
 
     }
-    return nil
+    return
 }
 
 // 数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
-func (db *DB) autoCompactingData() error {
-    key := "auto_compacting_data_cache_key_for_" + db.path + db.name
+func (table *Table) autoCompactingData() error {
+    key := "auto_compacting_data_cache_key_for_" + table.db.path + table.name
     if gcache.Get(key) != nil {
         return nil
     }
     gcache.Set(key, struct{}{}, 86400)
     defer gcache.Remove(key)
 
-    db.mu.Lock()
-    defer db.mu.Unlock()
+    table.mu.Lock()
+    defer table.mu.Unlock()
 
-    maxsize := db.getDbFileSpaceMaxSize()
+    maxsize := table.getDbFileSpaceMaxSize()
     if maxsize < gAUTO_COMPACTING_MINSIZE {
         return nil
     }
-    index := db.getDbFileSpace(maxsize)
+    index := table.getDbFileSpace(maxsize)
     if index < 0 {
         return nil
     }
-    dbsize  := gfile.Size(db.getDataFilePath())
+    dbpath  := table.getDataFilePath()
+    dbsize  := gfile.Size(dbpath)
     dbstart := index + int64(maxsize)
     if dbstart == dbsize {
-        return os.Truncate(db.getDataFilePath(), int64(index))
+        return os.Truncate(dbpath, int64(index))
     } else {
-        dbpf, err := db.dbfp.File()
+        dbpf, err := table.dbfp.File()
         if err != nil {
             return err
         }
@@ -119,18 +146,18 @@ func (db *DB) autoCompactingData() error {
             klen := gbinary.DecodeToUint8(buffer[0 : 1])
             key  := buffer[1 : 1 + klen]
             record := &Record {
-                hash64  : uint(db.getHash64(key)),
+                hash64  : uint(getHash64(key)),
                 key     : key,
             }
             // 查找对应的索引信息，并执行更新
-            if err := db.getIndexInfoByRecord(record); err == nil {
+            if err := table.getIndexInfoByRecord(record); err == nil {
                 if record.meta.end > 0 {
-                    if err := db.getDataInfoByRecord(record); err == nil {
+                    if err := table.getDataInfoByRecord(record); err == nil {
                         record.data.start -= int64(maxsize)
                         record.data.cap   += maxsize
-                        db.updateDataByRecord(record)
-                        db.updateMetaByRecord(record)
-                        db.updateIndexByRecord(record)
+                        table.updateDataByRecord(record)
+                        table.updateMetaByRecord(record)
+                        table.updateIndexByRecord(record)
                     } else {
                         return err
                     }
@@ -144,31 +171,31 @@ func (db *DB) autoCompactingData() error {
 }
 
 // 元数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
-func (db *DB) autoCompactingMeta() error {
-    key := "auto_compacting_meta_cache_key_for_" + db.path + db.name
+func (table *Table) autoCompactingMeta() error {
+    key := "auto_compacting_meta_cache_key_for_" + table.db.path + table.name
     if gcache.Get(key) != nil {
         return nil
     }
     gcache.Set(key, struct{}{}, 86400)
     defer gcache.Remove(key)
 
-    db.mu.Lock()
-    defer db.mu.Unlock()
+    table.mu.Lock()
+    defer table.mu.Unlock()
 
-    maxsize := db.getMtFileSpaceMaxSize()
+    maxsize := table.getMtFileSpaceMaxSize()
     if maxsize < gAUTO_COMPACTING_MINSIZE {
         return nil
     }
-    index := db.getMtFileSpace(maxsize)
+    index := table.getMtFileSpace(maxsize)
     if index < 0 {
         return nil
     }
-    mtsize  := gfile.Size(db.getMetaFilePath())
+    mtsize  := gfile.Size(table.getMetaFilePath())
     mtstart := index + int64(maxsize)
     if mtstart == mtsize {
-        return os.Truncate(db.getMetaFilePath(), int64(index))
+        return os.Truncate(table.getMetaFilePath(), int64(index))
     } else {
-        mtpf, err := db.mtfp.File()
+        mtpf, err := table.mtfp.File()
         if err != nil {
             return err
         }
@@ -181,13 +208,13 @@ func (db *DB) autoCompactingMeta() error {
                 hash64  : hash64,
             }
             // 查找对应的索引信息，并执行更新
-            if err := db.getIndexInfoByRecord(record); err == nil {
+            if err := table.getIndexInfoByRecord(record); err == nil {
                 if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), record.meta.start, record.meta.end); mtbuffer != nil {
                     record.meta.start -= int64(maxsize)
                     record.meta.cap   += maxsize
                     if _, err = mtpf.File().WriteAt(mtbuffer, record.meta.start); err == nil {
-                        db.updateIndexByRecord(record)
-                        db.checkAndResizeMtCap(record)
+                        table.updateIndexByRecord(record)
+                        table.checkAndResizeMtCap(record)
                     } else {
                         return err
                     }

@@ -115,8 +115,8 @@ func TestGet(count int) {
 func main() {
     count := 5000000
     //TestSet(count)
-    //TestGet(count)
-    TestRemove(count)
+    TestGet(count)
+    //TestRemove(count)
 
 
 }
