@@ -5,12 +5,12 @@ import (
     "sync"
     "bytes"
     "errors"
+    "sync/atomic"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/os/gfilepool"
     "gitee.com/johng/gf/g/os/gfilespace"
     "gitee.com/johng/gf/g/encoding/gbinary"
-    "sync/atomic"
 )
 
 // 数据表
@@ -67,8 +67,26 @@ type Record struct {
     data      Data
 }
 
-// 新建表或者读取现有表
+// 获取数据表对象，如果表名已存在，那么返回已存在的表对象
 func (db *DB) NewTable(name string) (*Table, error) {
+    return db.getTable(name)
+}
+
+// 获取数据表对象，如果表名已存在，那么返回已存在的表对象
+func (db *DB) getTable(name string) (*Table, error) {
+    if v := db.tables.Get(name); v != nil {
+        return v.(*Table), nil
+    }
+
+    if table, err := db.newTable(name); err == nil {
+        return table, nil
+    } else {
+        return nil, err
+    }
+}
+
+// 新建表或者读取现有表
+func (db *DB) newTable(name string) (*Table, error) {
     // 初始化数据表信息
     table := &Table{
         db   : db,
@@ -102,6 +120,9 @@ func (db *DB) NewTable(name string) (*Table, error) {
     // 初始化相关服务
     table.initFileSpace()
     table.startAutoCompactingLoop()
+
+    // 保存数据表对象指针到全局数据库对象中
+    table.db.tables.Set(name, table)
     return table, nil
 }
 

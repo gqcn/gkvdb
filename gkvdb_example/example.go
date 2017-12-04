@@ -6,9 +6,9 @@ import (
     "strconv"
 )
 
-func main()  {
+func example() {
     // 创建数据库，指定数据库存放目录，数据库名称
-    db, err := gkvdb.New("/tmp/gkvdb", "test")
+    db, err := gkvdb.New("/tmp/gkvdb")
     if err != nil {
         fmt.Println(err)
     }
@@ -70,4 +70,26 @@ func main()  {
 
     // 关闭数据库链接，让GC自动回收数据库相关资源
     db.Close()
+}
+
+func main()  {
+    db, err := gkvdb.New("/tmp/gkvdb")
+    if err != nil {
+        fmt.Println(err)
+    }
+    t, err := db.NewTable("test")
+    if err != nil {
+        fmt.Println(err)
+    }
+
+    //for i := 0; i < 10; i++ {
+    //    key   := []byte("k_" + strconv.Itoa(i))
+    //    value := []byte("v_" + strconv.Itoa(i))
+    //    t.Set(key, value)
+    //}
+
+    for i := 0; i < 10; i++ {
+        key   := []byte("k_" + strconv.Itoa(i))
+        fmt.Println(t.Get(key))
+    }
 }

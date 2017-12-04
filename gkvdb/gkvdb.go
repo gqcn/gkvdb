@@ -17,6 +17,8 @@ package gkvdb
 import (
     "sync"
     "sync/atomic"
+    "strconv"
+    "errors"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/encoding/ghash"
     "gitee.com/johng/gf/g/container/gmap"
@@ -33,7 +35,8 @@ const (
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
-    gBINLOG_AUTO_SYNCING     = 10                       // binlog自动同步到磁盘的时间(毫秒)
+    //gBINLOG_AUTO_SYNCING     = 10                       // binlog自动同步到磁盘的时间(毫秒)
+    gBINLOG_AUTO_SYNCING     = 1                       // binlog自动同步到磁盘的时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 512                      // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
     gBINLOG_MAX_SIZE         = 1024*1024*10             // binlog临时文件最大大小，超过该大小则强制性阻塞同步到数据文件(10MB)
@@ -49,8 +52,8 @@ type DB struct {
     closed int32                    // 数据库是否关闭，以便异步线程进行判断处理
 }
 
-// 创建一个KV数据库
-func New(path, name string) (*DB, error) {
+// 创建一个KV数据库，path指定数据库文件的存放目录绝对路径
+func New(path string) (*DB, error) {
     db := &DB {
         path   : path,
         tables : gmap.NewStringInterfaceMap(),
@@ -88,18 +91,14 @@ func (db *DB) Close() {
     atomic.StoreInt32(&db.closed, 1)
 }
 
-// 获取数据表对象
-func (db *DB) getTable(name string) *Table {
-    if v := db.tables.Get(name); v != nil {
-        return v.(*Table)
-    }
-    table, _ := db.NewTable(name)
-    return table
-}
-
 // 判断数据库是否已关闭
 func (db *DB) isClosed() bool {
     return atomic.LoadInt32(&db.closed) > 0
+}
+
+// 计算关键字的hash code，使用64位哈希函数
+func getHash64(key []byte) uint64 {
+    return ghash.BKDRHash64(key)
 }
 
 // 根据元数据的size计算cap
@@ -118,9 +117,20 @@ func getDataCapBySize(size int) int {
     return size
 }
 
-// 计算关键字的hash code，使用64位哈希函数
-func getHash64(key []byte) uint64 {
-    return ghash.BKDRHash64(key)
+// 检测键名合法性
+func checkKeyValid(key []byte) error {
+    if len(key) > gMAX_KEY_SIZE || len(key) == 0 {
+        return errors.New("invalid key size, should be in 1 and " + strconv.Itoa(gMAX_KEY_SIZE) + " bytes")
+    }
+    return nil
+}
+
+// 检测键值合法性
+func checkValueValid(value []byte) error {
+    if len(value) > gMAX_VALUE_SIZE {
+        return errors.New("too large value size, max allowed: " + strconv.Itoa(gMAX_VALUE_SIZE) + " bytes")
+    }
+    return nil
 }
 
 

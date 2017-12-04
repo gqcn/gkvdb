@@ -3,13 +3,12 @@ package gkvdb
 import (
     "os"
     "time"
+    "sync"
+    "sync/atomic"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
     "gitee.com/johng/gf/g/os/glog"
-    "sync"
-    "sync/atomic"
-    "github.com/syndtr/goleveldb/leveldb/table"
 )
 
 // 数据文件自动整理
@@ -33,7 +32,7 @@ func (table *Table) startAutoCompactingLoop() {
 func (db *DB) startAutoSyncingLoop() {
     go func() {
         for !db.isClosed() {
-            db.doAutoSyncing()
+            //db.doAutoSyncing()
             time.Sleep(gBINLOG_AUTO_SYNCING*time.Millisecond)
         }
     }()
@@ -63,7 +62,14 @@ func (db *DB) doAutoSyncing() {
                 // 不同的数据表异步执行数据保存
                 go func(n string, m map[string][]byte) {
                     defer wg.Done()
-                    table := db.getTable(n)
+                    // 获取数据表对象
+                    table, err := db.getTable(n)
+                    if err != nil {
+                        atomic.StoreInt32(&done, -1)
+                        glog.Error(err)
+                        return
+                    }
+                    // 执行保存操作
                     for k, v := range m {
                         if atomic.LoadInt32(&done) < 0 {
                             return
@@ -72,7 +78,6 @@ func (db *DB) doAutoSyncing() {
                             if err := table.remove([]byte(k)); err != nil {
                                 atomic.StoreInt32(&done, -1)
                                 glog.Error(err)
-                                time.Sleep(time.Second)
                                 return
                             }
                         } else {
@@ -80,7 +85,6 @@ func (db *DB) doAutoSyncing() {
                                 db.binlog.queue.PushBack(item)
                                 atomic.StoreInt32(&done, -1)
                                 glog.Error(err)
-                                time.Sleep(time.Second)
                                 return
                             }
                         }
@@ -92,6 +96,7 @@ func (db *DB) doAutoSyncing() {
             // 同步失败，重新推入队列
             if done < 0 {
                 db.binlog.queue.PushBack(item)
+                time.Sleep(time.Second)
             } else {
                 db.binlog.markTxSynced(item.txstart)
             }
@@ -100,7 +105,11 @@ func (db *DB) doAutoSyncing() {
             binlogPath := db.getBinLogFilePath()
             db.binlog.Lock()
             if gfile.Size(binlogPath) > 0 {
-                db.memt.clear()
+                // 清空数据库所有的表的缓存，由于该操作在binlog写锁内部执行，
+                // binlog写入完成之后才能写memtable，因此这里不存在memtable在清理的过程中写入数据的问题
+                for _, v := range *db.tables.Clone() {
+                    v.(*Table).memt.clear()
+                }
                 os.Truncate(binlogPath, 0)
             }
             db.binlog.Unlock()

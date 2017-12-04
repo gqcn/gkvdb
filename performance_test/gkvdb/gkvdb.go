@@ -18,7 +18,7 @@ var group int = 50
 // 数据库初始化
 func init() {
     t := gtime.Microsecond()
-    db, _ = gkvdb.New("/tmp/gkvdb", "test")
+    db, _ = gkvdb.New("/tmp/gkvdb")
     fmt.Println("db init:", gtime.Microsecond() - t)
 }
 
@@ -112,11 +112,11 @@ func TestGet(count int) {
 
 
 func main() {
-    //count := 5000000
+    count := 1000000
     //TestSet(count)
-    //TestGet(count)
+    TestGet(count)
     //TestRemove(count)
     //select {
-
+    //
     //}
 }

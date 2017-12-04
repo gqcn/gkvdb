@@ -3,7 +3,6 @@ package gkvdb
 import (
     "sync"
     "gitee.com/johng/gf/g/util/gtime"
-    "gitee.com/johng/gf/g/container/gmap"
 )
 
 // 事务操作对象
@@ -40,14 +39,13 @@ func (tx *Transaction) Set(key, value []byte) *Transaction {
 }
 
 // 添加数据(针对数据表)
-func (tx *Transaction) SetTo(key, value []byte, table string) *Transaction {
+func (tx *Transaction) SetTo(key, value []byte, name string) *Transaction {
     tx.mu.Lock()
     defer tx.mu.Unlock()
-
-    if _, ok := tx.tables[table]; !ok {
-        tx.tables[table] = make(map[string][]byte)
+    if _, ok := tx.tables[name]; !ok {
+        tx.tables[name] = make(map[string][]byte)
     }
-    tx.tables[table][string(key)] = value
+    tx.tables[name][string(key)] = value
     return tx
 }
 
@@ -85,16 +83,11 @@ func (tx *Transaction) Commit() error {
     if len(tx.tables) == 0 {
         return nil
     }
-    // 先写Binlog
+    // 写Binlog
     if err := tx.db.binlog.writeByTx(tx); err != nil {
         return err
     }
-    // 再写内存表(分别写入到对应表的memtable中)
-    for n, m := range tx.tables {
-        if table := tx.db.getTable(n); table != nil {
-            table.memt.set(m)
-        }
-    }
+
     // 重置事务
     tx.reset()
     return nil
