@@ -77,19 +77,19 @@ func main()  {
     if err != nil {
         fmt.Println(err)
     }
-    t, err := db.NewTable("test")
-    if err != nil {
-        fmt.Println(err)
-    }
-
-    //for i := 0; i < 10; i++ {
-    //    key   := []byte("k_" + strconv.Itoa(i))
-    //    value := []byte("v_" + strconv.Itoa(i))
-    //    t.Set(key, value)
+    //t, err := db.NewTable("test")
+    //if err != nil {
+    //    fmt.Println(err)
     //}
 
     for i := 0; i < 10; i++ {
         key   := []byte("k_" + strconv.Itoa(i))
-        fmt.Println(t.Get(key))
+        value := []byte("v_" + strconv.Itoa(i))
+        db.Set(key, value)
+    }
+
+    for i := 0; i < 10; i++ {
+        key   := []byte("k_" + strconv.Itoa(i))
+        fmt.Println(db.Get(key))
     }
 }

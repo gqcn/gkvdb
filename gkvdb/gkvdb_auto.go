@@ -32,7 +32,7 @@ func (table *Table) startAutoCompactingLoop() {
 func (db *DB) startAutoSyncingLoop() {
     go func() {
         for !db.isClosed() {
-            //db.doAutoSyncing()
+            db.doAutoSyncing()
             time.Sleep(gBINLOG_AUTO_SYNCING*time.Millisecond)
         }
     }()

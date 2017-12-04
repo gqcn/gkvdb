@@ -9,14 +9,17 @@ import (
     "gitee.com/johng/gf/g/os/gfilepool"
     "gitee.com/johng/gf/g/container/glist"
     "gitee.com/johng/gf/g/encoding/gbinary"
+    "sync/atomic"
 )
 
 // binlog操作对象
 type BinLog struct {
     sync.RWMutex
-    db    *DB
-    fp    *gfilepool.Pool
-    queue *glist.SafeList
+    db    *DB              // 所属数据库
+    fp    *gfilepool.Pool  // 文件指针池
+    size  int32            // 当前的binlog大小
+    queue *glist.SafeList  // 同步队列
+
 }
 
 // binlog写入项
@@ -47,14 +50,11 @@ func (binlog *BinLog) close() {
 // 从binlog文件中恢复未同步数据到memtable中
 // 内部会检测异常数据写入，并忽略异常数据，以便异常数据不会进入到数据库中
 func (binlog *BinLog) initFromFile() {
-    binlog.RLock()
     blbuffer := gfile.GetBinContents(binlog.db.getBinLogFilePath())
-    binlog.RUnlock()
-
     if len(blbuffer) == 0 {
         return
     }
-    //t1 := gtime.Microsecond()
+    binlog.size = int32(len(blbuffer))
     // 在异常数据下，需要花费更多的时间进行数据纠正(字节不断递增计算下一条正确的binlog位置)
     for i := 0; i < len(blbuffer); {
         buffer := blbuffer[i : i + 13]
@@ -180,7 +180,20 @@ func (binlog *BinLog) writeByTx(tx *Transaction) error {
         return errors.New("push binlog to sync queue failed")
     }
 
+    // 增加binlog大小
+    binlog.addSize(len(buffer))
+
     return nil
+}
+
+// 获取binlog大小
+func (binlog *BinLog) getSize() int {
+    return int(atomic.LoadInt32(&binlog.size))
+}
+
+// 增加binlog大小
+func (binlog *BinLog) addSize(size int) {
+    atomic.AddInt32(&binlog.size, int32(size))
 }
 
 // 写入磁盘，标识事务已经同步，在对应位置只写入1个字节
