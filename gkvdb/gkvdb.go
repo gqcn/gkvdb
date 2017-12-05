@@ -38,7 +38,7 @@ const (
     gBINLOG_AUTO_SYNCING     = 10                       // binlog自动同步到磁盘的时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 512                      // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
-    gBINLOG_MAX_SIZE         = 1024*1024*10             // binlog临时文件最大大小，超过该大小则强制性阻塞同步到数据文件(10MB)
+    gBINLOG_MAX_LENGTH       = 100000                   // binlog临时队列最大长度，超过该长度则强制性阻塞同步到数据文件
     gDEFAULT_TABLE_NAME      = "default"                // 默认的数据表名
 )
 
@@ -56,6 +56,10 @@ func New(path string) (*DB, error) {
     db := &DB {
         path   : path,
         tables : gmap.NewStringInterfaceMap(),
+    }
+    // 初始化数据库目录
+    if !gfile.Exists(path) {
+        gfile.Mkdir(path)
     }
     // 初始化BinLog
     if binlog, err := newBinLog(db); err != nil {

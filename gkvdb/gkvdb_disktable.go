@@ -68,12 +68,7 @@ type Record struct {
 }
 
 // 获取数据表对象，如果表名已存在，那么返回已存在的表对象
-func (db *DB) NewTable(name string) (*Table, error) {
-    return db.getTable(name)
-}
-
-// 获取数据表对象，如果表名已存在，那么返回已存在的表对象
-func (db *DB) getTable(name string) (*Table, error) {
+func (db *DB) Table(name string) (*Table, error) {
     if v := db.tables.Get(name); v != nil {
         return v.(*Table), nil
     }

@@ -77,7 +77,8 @@ func main()  {
     if err != nil {
         fmt.Println(err)
     }
-    //t, err := db.NewTable("test")
+
+    //t, err := db.Table("test")
     //if err != nil {
     //    fmt.Println(err)
     //}

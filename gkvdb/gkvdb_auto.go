@@ -3,8 +3,6 @@ package gkvdb
 import (
     "os"
     "time"
-    "sync"
-    "sync/atomic"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
@@ -32,93 +30,12 @@ func (table *Table) startAutoCompactingLoop() {
 func (db *DB) startAutoSyncingLoop() {
     go func() {
         for !db.isClosed() {
-            db.doAutoSyncing()
+            db.binlog.sync()
             time.Sleep(gBINLOG_AUTO_SYNCING*time.Millisecond)
         }
     }()
 }
 
-// 自动同步binlog的数据到对应数据表中
-func (db *DB) doAutoSyncing() {
-    key := "auto_syncing_cache_key_for_" + db.path
-    if gcache.Get(key) != nil {
-        return
-    }
-    gcache.Set(key, struct{}{}, 86400)
-    defer gcache.Remove(key)
-
-    // 如果没有可同步的数据，那么立即返回
-    if db.binlog.queue.Len() == 0 {
-        return
-    }
-
-    for {
-        if v := db.binlog.queue.PopBack(); v != nil {
-            var wg sync.WaitGroup
-            item := v.(BinLogItem)
-            done := int32(0)
-            for n, m := range item.datamap {
-                wg.Add(1)
-                // 不同的数据表异步执行数据保存
-                go func(n string, m map[string][]byte) {
-                    defer wg.Done()
-                    // 获取数据表对象
-                    table, err := db.getTable(n)
-                    if err != nil {
-                        atomic.StoreInt32(&done, -1)
-                        glog.Error(err)
-                        return
-                    }
-                    // 执行保存操作
-                    for k, v := range m {
-                        if atomic.LoadInt32(&done) < 0 {
-                            return
-                        }
-                        if len(v) == 0 {
-                            if err := table.remove([]byte(k)); err != nil {
-                                atomic.StoreInt32(&done, -1)
-                                glog.Error(err)
-                                return
-                            }
-                        } else {
-                            if err := table.set([]byte(k), v); err != nil {
-                                db.binlog.queue.PushBack(item)
-                                atomic.StoreInt32(&done, -1)
-                                glog.Error(err)
-                                return
-                            }
-                        }
-                    }
-
-                }(n, m)
-            }
-            wg.Wait()
-            // 同步失败，重新推入队列
-            if done < 0 {
-                db.binlog.queue.PushBack(item)
-                time.Sleep(time.Second)
-            } else {
-                db.binlog.markTxSynced(item.txstart)
-            }
-        } else {
-            // 如果所有的事务数据已经同步完成，那么矫正binblog文件大小
-            binlogPath := db.getBinLogFilePath()
-            db.binlog.Lock()
-            if gfile.Size(binlogPath) > 0 {
-                // 清空数据库所有的表的缓存，由于该操作在binlog写锁内部执行，
-                // binlog写入完成之后才能写memtable，因此这里不存在memtable在清理的过程中写入数据的问题
-                for _, v := range *db.tables.Clone() {
-                    v.(*Table).memt.clear()
-                }
-                os.Truncate(binlogPath, 0)
-            }
-            db.binlog.Unlock()
-            break
-        }
-
-    }
-    return
-}
 
 // 数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
 func (table *Table) autoCompactingData() error {

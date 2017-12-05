@@ -5,19 +5,6 @@ package gkvdb
 // 数据库操作
 // =================================================================================
 
-// 查询数据(默认表)
-func (db *DB) Get(key []byte) []byte {
-    return db.GetFrom(key, gDEFAULT_TABLE_NAME)
-}
-
-// 查询数据(数据表)
-func (db *DB) GetFrom(key []byte, name string) []byte {
-    if table, _ := db.getTable(name); table != nil {
-        return table.Get(key)
-    }
-    return nil
-}
-
 // 保存数据(默认表)
 func (db *DB) Set(key []byte, value []byte) error {
     return db.SetTo(key, value, gDEFAULT_TABLE_NAME)
@@ -32,6 +19,19 @@ func (db *DB) SetTo(key []byte, value []byte, name string) error {
         return err
     }
     return db.Begin().SetTo(key, value, name).Commit()
+}
+
+// 查询数据(默认表)
+func (db *DB) Get(key []byte) []byte {
+    return db.GetFrom(key, gDEFAULT_TABLE_NAME)
+}
+
+// 查询数据(数据表)
+func (db *DB) GetFrom(key []byte, name string) []byte {
+    if table, _ := db.Table(name); table != nil {
+        return table.Get(key)
+    }
+    return nil
 }
 
 // 删除数据(默认表)
@@ -51,14 +51,6 @@ func (db *DB) RemoveFrom(key []byte, name string) error {
 // 数据表操作
 // =================================================================================
 
-// 查询数据(数据表)
-func (table *Table) Get(key []byte) []byte {
-    if v, ok := table.memt.get(key); ok {
-        return v
-    }
-    return table.get(key)
-}
-
 // 保存数据(数据表)
 func (table *Table) Set(key []byte, value []byte) error {
     if err := checkKeyValid(key); err != nil {
@@ -68,6 +60,14 @@ func (table *Table) Set(key []byte, value []byte) error {
         return err
     }
     return table.db.Begin().SetTo(key, value, table.name).Commit()
+}
+
+// 查询数据(数据表)
+func (table *Table) Get(key []byte) []byte {
+    if v, ok := table.memt.get(key); ok {
+        return v
+    }
+    return table.get(key)
 }
 
 // 删除数据(数据表)

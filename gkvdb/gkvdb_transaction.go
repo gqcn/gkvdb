@@ -3,6 +3,7 @@ package gkvdb
 import (
     "sync"
     "gitee.com/johng/gf/g/util/gtime"
+    "gitee.com/johng/gf/g/os/glog"
 )
 
 // 事务操作对象
@@ -85,6 +86,7 @@ func (tx *Transaction) Commit() error {
     }
     // 写Binlog
     if err := tx.db.binlog.writeByTx(tx); err != nil {
+        glog.Error(err)
         return err
     }
 
