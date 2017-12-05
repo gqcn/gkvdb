@@ -35,10 +35,10 @@ const (
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
-    gBINLOG_AUTO_SYNCING     = 10                       // binlog自动同步到磁盘的时间(毫秒)
+    gBINLOG_AUTO_SYNCING     = 100                      // binlog自动同步到磁盘的时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 512                      // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
-    gBINLOG_MAX_LENGTH       = 100000                   // binlog临时队列最大长度，超过该长度则强制性阻塞同步到数据文件
+    gBINLOG_MAX_LENGTH       = 200000                   // binlog临时队列最大长度，超过该长度则强制性阻塞同步到数据文件
     gDEFAULT_TABLE_NAME      = "default"                // 默认的数据表名
 )
 

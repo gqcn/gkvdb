@@ -42,10 +42,14 @@ func TestSet(count int) {
                 value := []byte("value_" + strconv.Itoa(i))
                 tx.Set(key, value)
                 if i % batch == 0 {
-                    tx.Commit()
+                    if err := tx.Commit(); err != nil {
+                        fmt.Println(err)
+                    }
                 }
             }
-            tx.Commit()
+            if err := tx.Commit(); err != nil {
+                fmt.Println(err)
+            }
             wg.Done()
         }(ss, se)
     }
@@ -112,7 +116,7 @@ func TestGet(count int) {
 
 
 func main() {
-    count := 1000000
+    count := 500000
     //TestSet(count)
     TestGet(count)
     //TestRemove(count)
