@@ -12,8 +12,9 @@ go get -u gitee.com/johng/gkvdb
 ```go
 import "gitee.com/johng/gkvdb/gkvdb"
 
-// 创建数据库，指定数据库存放目录，数据库名称
-db, err := gkvdb.New("/tmp/gkvdb", "test")
+// 创建数据库，指定数据库存放目录
+// gkvdb支持多表，默认数据表名称为default
+db, err := gkvdb.New("/tmp/gkvdb")
 if err != nil {
     fmt.Println(err)
 }
@@ -85,8 +86,75 @@ for i := 0; i < 100; i++ {
 tx.Commit()
 ```
 
-#### 4、随机遍历
+#### 4、多表操作
 ```go
+// 创建user表
+name    := "user"
+tu, err := db.Table(name)
+if err != nil {
+    fmt.Println(err)
+}
+
+// user表写入数据
+tu.Set([]byte("user_0"), []byte("name_0"))
+
+// user表查询数据
+fmt.Println(tu.Get([]byte("user_0")))
+
+// user表删除数据
+tu.Remove([]byte("user_0"))
+
+// 通过db对象操作user表写入数据
+db.SetTo([]byte("user_1"), []byte("name_1"), name)
+
+// 通过db对象操作user表查询数据
+fmt.Println(db.GetFrom([]byte("user_1"), name))
+
+// 通过db对象操作user表删除数据
+db.RemoveFrom([]byte("user_1"), name)
+```
+
+
+#### 5、多表事务
+```go
+// 两张表
+name1 := "user1"
+name2 := "user2"
+
+// 创建事务对象
+tx := db.Begin()
+
+// 事务操作user表写入数据
+tx.SetTo([]byte("user_1"), []byte("name_1"), name1)
+tx.SetTo([]byte("user_2"), []byte("name_2"), name2)
+
+// 事务操作user表查询数据
+fmt.Println("tx get1:", tx.GetFrom([]byte("user_1"), name1))
+fmt.Println("tx get2:", tx.GetFrom([]byte("user_2"), name2))
+tx.Commit()
+fmt.Println("db get1:", db.GetFrom([]byte("user_1"), name1))
+fmt.Println("db get2:", db.GetFrom([]byte("user_2"), name2))
+
+// 事务操作user表删除数据
+tx.RemoveFrom([]byte("user_1"), name1)
+tx.RemoveFrom([]byte("user_2"), name2)
+fmt.Println("tx removed1:",tx.GetFrom([]byte("user_1"), name1))
+fmt.Println("tx removed2:",tx.GetFrom([]byte("user_2"), name2))
+
+// 删除操作将被回滚
+tx.Rollback()
+
+// 重新查询
+fmt.Println("tx get1:", tx.GetFrom([]byte("user_1"), name1))
+fmt.Println("tx get2:", tx.GetFrom([]byte("user_2"), name2))
+fmt.Println("db get1:", db.GetFrom([]byte("user_1"), name1))
+fmt.Println("db get2:", db.GetFrom([]byte("user_2"), name2))
+```
+
+
+#### 6、随机遍历
+```go
+// ======默认default表的遍历=====
 // 随机获取10条数据
 fmt.Println(db.Items(10))
 
@@ -98,6 +166,32 @@ fmt.Println(db.Keys(-1))
 
 // 获取所有的键键值
 fmt.Println(db.Values(-1))
+
+// ======指定表的遍历=====
+// 两张表
+name1 := "user1"
+name2 := "user2"
+tu1, err := db.Table(name1)
+if err != nil {
+    fmt.Println(err)
+}
+tu2, err := db.Table(name2)
+if err != nil {
+    fmt.Println(err)
+}
+for i := 0; i < 10; i++ {
+    key   := []byte("k_" + strconv.Itoa(i))
+    value := []byte("v_" + strconv.Itoa(i))
+    tu1.Set(key, value)
+}
+for i := 10; i < 20; i++ {
+    key   := []byte("k_" + strconv.Itoa(i))
+    value := []byte("v_" + strconv.Itoa(i))
+    tu2.Set(key, value)
+}
+
+fmt.Println(tu1.Items(-1))
+fmt.Println(tu2.Items(-1))
 ```
 
 ## 文档

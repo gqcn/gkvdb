@@ -56,14 +56,13 @@ func (tx *Transaction) Get(key []byte) []byte {
 }
 
 // 查询数据(针对数据表)
-func (tx *Transaction) GetFrom(key []byte, table string) []byte {
+func (tx *Transaction) GetFrom(key []byte, name string) []byte {
     tx.mu.RLock()
     defer tx.mu.RUnlock()
-
-    if _, ok := tx.tables[table]; ok {
-        return tx.tables[table][string(key)]
+    if _, ok := tx.tables[name]; ok {
+        return tx.tables[name][string(key)]
     }
-    return tx.db.Get(key)
+    return tx.db.GetFrom(key, name)
 }
 
 // 删除数据
@@ -72,8 +71,8 @@ func (tx *Transaction) Remove(key []byte) *Transaction {
 }
 
 // 删除数据(针对数据表)
-func (tx *Transaction) RemoveFrom(key []byte, table string) *Transaction {
-    return tx.SetTo(key, nil, table)
+func (tx *Transaction) RemoveFrom(key []byte, name string) *Transaction {
+    return tx.SetTo(key, nil, name)
 }
 
 // 提交数据

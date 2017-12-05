@@ -6,6 +6,7 @@ import (
     "gitee.com/johng/gkvdb/gkvdb"
     "gitee.com/johng/gf/g/util/gtime"
     "sync"
+    "bytes"
 )
 
 // 数据库对象指针
@@ -57,6 +58,37 @@ func TestSet(count int) {
     fmt.Println("TestSet:", gtime.Microsecond() - t)
 }
 
+// 测试数据库查询
+func TestGet(count int) {
+    var wg sync.WaitGroup
+    t  := gtime.Microsecond()
+    p  := count/group
+    p  += group - p%group
+    for g := 0; g < group; g++ {
+        ss := g*p + 1
+        se := (g + 1)*p
+        if se > count {
+            se = count
+        }
+        wg.Add(1)
+        go func(start, end int) {
+            for i := start; i <= end; i++ {
+                key   := []byte("key_" + strconv.Itoa(i))
+                value := []byte("value_" + strconv.Itoa(i))
+                r := db.Get(key)
+                if r == nil {
+                    fmt.Println("TestGet value not found for index:", i)
+                } else if bytes.Compare(r, value) != 0 {
+                    fmt.Printf("TestGet value not match: %v VS %v\n", r, value)
+                }
+            }
+            wg.Done()
+        }(ss, se)
+    }
+    wg.Wait()
+    fmt.Println("TestGet:", gtime.Microsecond() - t)
+}
+
 // 测试数据库删除
 func TestRemove(count int) {
     var wg sync.WaitGroup
@@ -87,37 +119,10 @@ func TestRemove(count int) {
     fmt.Println("TestRemove:", gtime.Microsecond() - t)
 }
 
-// 测试数据库查询
-func TestGet(count int) {
-    var wg sync.WaitGroup
-    t  := gtime.Microsecond()
-    p  := count/group
-    p  += group - p%group
-    for g := 0; g < group; g++ {
-        ss := g*p + 1
-        se := (g + 1)*p
-        if se > count {
-            se = count
-        }
-        wg.Add(1)
-        go func(start, end int) {
-            for i := start; i <= end; i++ {
-                key := []byte("key_" + strconv.Itoa(i))
-                if r := db.Get(key); r == nil {
-                    fmt.Println("TestGet value not found for index:", i)
-                }
-            }
-            wg.Done()
-        }(ss, se)
-    }
-    wg.Wait()
-    fmt.Println("TestGet:", gtime.Microsecond() - t)
-}
-
 
 func main() {
     count := 500000
-    //TestSet(count)
+    TestSet(count)
     TestGet(count)
     //TestRemove(count)
     //select {
