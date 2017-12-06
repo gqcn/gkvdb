@@ -209,7 +209,7 @@ func (table *Table) remove(key []byte) error {
     return nil
 }
 
-// 遍历，注意遍历只针对磁盘化后的数据，并且不包括中间binlog数据
+// 遍历，注意该方法遍历只针对磁盘化后的数据，并且不包括中间binlog数据
 func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
     table.mu.RLock()
     defer table.mu.RUnlock()

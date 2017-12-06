@@ -12,13 +12,11 @@ func (db *DB) Set(key []byte, value []byte) error {
 
 // 保存数据(数据表)
 func (db *DB) SetTo(key []byte, value []byte, name string) error {
-    if err := checkKeyValid(key); err != nil {
+    tx := db.Begin()
+    if err := tx.SetTo(key, value, name); err != nil {
         return err
     }
-    if err := checkValueValid(key); err != nil {
-        return err
-    }
-    return db.Begin().SetTo(key, value, name).Commit()
+    return tx.Commit()
 }
 
 // 查询数据(默认表)
@@ -41,10 +39,11 @@ func (db *DB) Remove(key []byte) error {
 
 // 删除数据(数据表)
 func (db *DB) RemoveFrom(key []byte, name string) error {
-    if err := checkKeyValid(key); err != nil {
+    tx := db.Begin()
+    if err := tx.RemoveFrom(key, name); err != nil {
         return err
     }
-    return db.Begin().RemoveFrom(key, name).Commit()
+    return tx.Commit()
 }
 
 // 获取max条随机键值对，max=-1时获取所有数据返回
@@ -72,13 +71,11 @@ func (db *DB) Values(max int) [][]byte {
 
 // 保存数据(数据表)
 func (table *Table) Set(key []byte, value []byte) error {
-    if err := checkKeyValid(key); err != nil {
+    tx := table.db.Begin()
+    if err := tx.SetTo(key, value, table.name); err != nil {
         return err
     }
-    if err := checkValueValid(key); err != nil {
-        return err
-    }
-    return table.db.Begin().SetTo(key, value, table.name).Commit()
+    return tx.Commit()
 }
 
 // 查询数据(数据表)
@@ -91,10 +88,11 @@ func (table *Table) Get(key []byte) []byte {
 
 // 删除数据(数据表)
 func (table *Table) Remove(key []byte) error {
-    if err := checkKeyValid(key); err != nil {
+    tx := table.db.Begin()
+    if err := tx.RemoveFrom(key, table.name); err != nil {
         return err
     }
-    return table.db.Begin().RemoveFrom(key, table.name).Commit()
+    return tx.Commit()
 }
 
 // 随机遍历数据表
@@ -127,20 +125,5 @@ func (table *Table) Values(max int) [][]byte {
     }
     return values
 }
-
-// 打印数据库状态(调试使用)
-//func (db *DB) PrintState() {
-//    mtblocks := db.mtsp.GetAllBlocks()
-//    dbblocks := db.dbsp.GetAllBlocks()
-//    fmt.Println("meta pieces:")
-//    fmt.Println("       size:", len(mtblocks))
-//    fmt.Println("       list:", mtblocks)
-//
-//    fmt.Println("data pieces:")
-//    fmt.Println("       size:", len(dbblocks))
-//    fmt.Println("       list:", dbblocks)
-//
-//    fmt.Println("=======================================")
-//}
 
 

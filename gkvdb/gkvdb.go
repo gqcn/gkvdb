@@ -26,6 +26,7 @@ import (
 
 const (
     gDEFAULT_PART_SIZE       = 100000                   // 默认哈希表分区大小
+    gMAX_TABLE_SIZE          = 0xFF                     // 表名最大长度(255byte)
     gMAX_KEY_SIZE            = 0xFF                     // 键名最大长度(255byte)
     gMAX_VALUE_SIZE          = 0xFFFFFF                 // 键值最大长度(16MB)
     gMETA_ITEM_SIZE          = 17                       // 元数据单项大小(byte)
@@ -118,6 +119,14 @@ func getDataCapBySize(size int) int {
         return size + gDATA_BUCKET_SIZE - size%gDATA_BUCKET_SIZE
     }
     return size
+}
+
+// 检测键名合法性
+func checkTableValid(name string) error {
+    if len(name) > gMAX_TABLE_SIZE || len(name) == 0 {
+        return errors.New("invalid table name size, should be in 1 and " + strconv.Itoa(gMAX_TABLE_SIZE) + " bytes")
+    }
+    return nil
 }
 
 // 检测键名合法性

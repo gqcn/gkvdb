@@ -179,5 +179,5 @@ func items() {
 }
 
 func main()  {
-    items()
+    tabletx()
 }

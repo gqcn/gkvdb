@@ -35,19 +35,31 @@ func (db *DB) txid() int64 {
 }
 
 // 添加数据
-func (tx *Transaction) Set(key, value []byte) *Transaction {
+func (tx *Transaction) Set(key, value []byte) error{
     return tx.SetTo(key, value, gDEFAULT_TABLE_NAME)
 }
 
 // 添加数据(针对数据表)
-func (tx *Transaction) SetTo(key, value []byte, name string) *Transaction {
+func (tx *Transaction) SetTo(key, value []byte, name string) error {
     tx.mu.Lock()
     defer tx.mu.Unlock()
+
+    // 每一次操作都要执行表名、键名、键值长度检查
+    if err := checkTableValid(name); err != nil {
+        return err
+    }
+    if err := checkKeyValid(key); err != nil {
+        return err
+    }
+    if err := checkValueValid(key); err != nil {
+        return err
+    }
+
     if _, ok := tx.tables[name]; !ok {
         tx.tables[name] = make(map[string][]byte)
     }
     tx.tables[name][string(key)] = value
-    return tx
+    return nil
 }
 
 // 查询数据
@@ -66,12 +78,12 @@ func (tx *Transaction) GetFrom(key []byte, name string) []byte {
 }
 
 // 删除数据
-func (tx *Transaction) Remove(key []byte) *Transaction {
+func (tx *Transaction) Remove(key []byte) error {
     return tx.RemoveFrom(key, gDEFAULT_TABLE_NAME)
 }
 
 // 删除数据(针对数据表)
-func (tx *Transaction) RemoveFrom(key []byte, name string) *Transaction {
+func (tx *Transaction) RemoveFrom(key []byte, name string) error {
     return tx.SetTo(key, nil, name)
 }
 
