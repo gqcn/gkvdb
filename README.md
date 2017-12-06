@@ -112,6 +112,10 @@ fmt.Println(db.GetFrom([]byte("user_1"), name))
 
 // 通过db对象操作user表删除数据
 db.RemoveFrom([]byte("user_1"), name)
+
+// 手动关闭表，释放表资源
+// 一般不用手动关闭，在数据库关闭时会自动关闭所有的表
+tu.Close()
 ```
 
 
