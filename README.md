@@ -24,7 +24,7 @@ Go语言开发的基于DRH(Deep-Re-Hash)深度哈希分区算法的高性能Key-
 ```
 go get -u gitee.com/johng/gf
 go get -u gitee.com/johng/gkvdb
-````
+```
 
 
 ## 使用
