@@ -3,10 +3,10 @@ package main
 import (
     "fmt"
     "strconv"
-    "gitee.com/johng/gkvdb/gkvdb"
-    "gitee.com/johng/gf/g/util/gtime"
     "sync"
     "bytes"
+    "gitee.com/johng/gkvdb/gkvdb"
+    "gitee.com/johng/gf/g/os/gtime"
 )
 
 // 数据库对象指针

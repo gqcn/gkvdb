@@ -2,10 +2,10 @@ package main
 
 import (
     "fmt"
-    "strconv"
-    "gitee.com/johng/gf/g/util/gtime"
-    "github.com/syndtr/goleveldb/leveldb"
     "sync"
+    "strconv"
+    "gitee.com/johng/gf/g/os/gtime"
+    "github.com/syndtr/goleveldb/leveldb"
 )
 
 // 数据库对象指针

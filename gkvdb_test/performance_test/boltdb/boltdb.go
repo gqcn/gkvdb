@@ -2,10 +2,10 @@ package main
 
 import (
     "fmt"
-    "gitee.com/johng/gf/g/util/gtime"
+    "log"
     "strconv"
     "github.com/boltdb/bolt"
-    "log"
+    "gitee.com/johng/gf/g/os/gtime"
 )
 
 var db *bolt.DB

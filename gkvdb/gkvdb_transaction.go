@@ -2,8 +2,8 @@ package gkvdb
 
 import (
     "sync"
-    "gitee.com/johng/gf/g/util/gtime"
     "gitee.com/johng/gf/g/os/glog"
+    "gitee.com/johng/gf/g/os/gtime"
 )
 
 // 事务操作对象
