@@ -88,7 +88,6 @@ func (binlog *BinLog) initFromFile() {
             i += 13 + blsize + 8
         }
     }
-
 }
 
 // 将二进制数据转换为事务对象

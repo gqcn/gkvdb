@@ -114,7 +114,7 @@ func (db *DB) newTable(name string) (*Table, error) {
     }
     // 初始化相关服务
     table.initFileSpace()
-    table.startAutoCompactingLoop()
+    //table.startAutoCompactingLoop()
 
     // 保存数据表对象指针到全局数据库对象中
     table.db.tables.Set(name, table)
@@ -355,6 +355,8 @@ func (table *Table) getDataInfoByRecord(record *Record) error {
                                 record.data.end    = dbend
                                 break
                             }
+                        } else {
+                            return nil
                         }
                     }
                 }
