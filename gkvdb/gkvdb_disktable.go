@@ -244,12 +244,18 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
                     start := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
                     end   := start + int64(klen + vlen)
                     data  := gfile.GetBinContentByTwoOffsets(dbpf.File(), start, end)
-                    key   := data[1 : 1 + klen]
-                    value := data[1 + klen : ]
-                    m[string(key)] = value
-                    if len(m) == max {
-                        return m
+                    keyb  := data[1 : 1 + klen]
+                    key   := string(keyb)
+                    // 内存表数据优先，并且保证内存表中已删除的数据不会被遍历出来
+                    if _, ok := m[key]; !ok {
+                        if _, ok := table.memt.get(keyb); !ok {
+                            m[key] = data[1 + klen : ]
+                            if len(m) == max {
+                                return m
+                            }
+                        }
                     }
+
                 }
             }
         } else {

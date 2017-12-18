@@ -50,14 +50,13 @@ func (mtable *MemTable) items(max int) map[string][]byte {
     mtable.mu.RLock()
     defer mtable.mu.RUnlock()
 
-    if len(mtable.datamap) <= max {
-        return mtable.datamap
-    }
     m := make(map[string][]byte)
     for k, v := range mtable.datamap {
-        m[k] = v
-        if len(m) == max {
-            break
+        if len(v) > 0 {
+            m[k] = v
+            if len(m) == max {
+                break
+            }
         }
     }
     return m
