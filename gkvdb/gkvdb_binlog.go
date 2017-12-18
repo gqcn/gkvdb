@@ -20,7 +20,7 @@ type BinLog struct {
     smu    sync.RWMutex     // binlog同步互斥锁
     db     *DB              // 所属数据库
     fp     *gfilepool.Pool  // 文件指针池
-    queue  *glist.SafeList  // 同步队列
+    queue  *glist.SafeList  // 同步打包数据队列
     length int32            // 队列数据项长度(注意queue中存放的是打包的数据项)
 }
 
@@ -212,21 +212,15 @@ func (binlog *BinLog) markSynced(start int64) error {
 
 // 执行binlog同步
 func (binlog *BinLog) sync(from int) {
-    // 保证只有一个线程在运行
-    binlog.smu.Lock()
-    defer binlog.smu.Unlock()
-
-    // 如果没有可同步的数据，那么立即返回
-    if binlog.queue.Len() == 0 {
-        return
-    }
-
     // 来源于事务提交时的强制同步，需要判断同步内容大小
-    if from == 1 && atomic.LoadInt32(&binlog.length) < gBINLOG_MAX_LENGTH {
+    if (from == 1 && atomic.LoadInt32(&binlog.length) < gBINLOG_MAX_LENGTH) || binlog.queue.Len() == 0 {
         //fmt.Println("no reaching binlog max length, no sync")
         return
     }
 
+    // binlog互斥锁保证同时只有一个线程在运行
+    binlog.smu.Lock()
+    defer binlog.smu.Unlock()
     for {
         if v := binlog.queue.PopBack(); v != nil {
             wg     := sync.WaitGroup{}
