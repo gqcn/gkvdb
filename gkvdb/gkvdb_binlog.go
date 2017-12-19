@@ -227,6 +227,10 @@ func (binlog *BinLog) sync(from int) {
             item   := v.(BinLogItem)
             done   := int32(0)
             length := int32(0)
+            // 一般不会为空
+            if item.datamap == nil {
+                continue
+            }
             for n, m := range item.datamap {
                 wg.Add(1)
                 length += int32(len(m))

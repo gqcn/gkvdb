@@ -71,7 +71,7 @@ func New(path string) (*DB, error) {
 
     // 自检并初始化相关服务
     db.binlog.initFromFile()
-    //db.startAutoSyncingLoop()
+    db.startAutoSyncingLoop()
     return db, nil
 }
 

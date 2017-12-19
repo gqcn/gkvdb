@@ -3,10 +3,10 @@ package gkvdb
 import (
     "os"
     "time"
+    "gitee.com/johng/gf/g/os/glog"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
-    "gitee.com/johng/gf/g/os/glog"
 )
 
 // 数据文件自动整理
@@ -57,10 +57,12 @@ func (table *Table) autoCompactingData() error {
     if index < 0 {
         return nil
     }
+
     dbpath  := table.getDataFilePath()
     dbsize  := gfile.Size(dbpath)
     dbstart := index + int64(maxsize)
     if dbstart == dbsize {
+        // 如果碎片正好在文件末尾,那么直接truncate
         return os.Truncate(dbpath, int64(index))
     } else {
         dbpf, err := table.dbfp.File()
@@ -68,14 +70,15 @@ func (table *Table) autoCompactingData() error {
             return err
         }
         defer dbpf.Close()
-        if buffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbstart + 1 + gMAX_KEY_SIZE); buffer != nil {
-            klen := gbinary.DecodeToUint8(buffer[0 : 1])
-            key  := buffer[1 : 1 + klen]
+        // 为防止截止位置超出文件长度，这里先获取键名长度
+        if buffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbstart + 1); buffer != nil {
+            klen   := gbinary.DecodeToUint8(buffer)
+            key    := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart + 1, dbstart + 1 + int64(klen))
             record := &Record {
                 hash64  : uint(getHash64(key)),
                 key     : key,
             }
-            // 查找对应的索引信息，并执行更新
+            // 查找对应数据的索引信息，并执行更新
             if err := table.getIndexInfoByRecord(record); err == nil {
                 if record.meta.end > 0 {
                     if err := table.getDataInfoByRecord(record); err == nil {

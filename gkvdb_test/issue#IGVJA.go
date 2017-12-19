@@ -2,10 +2,10 @@ package main
 
 import (
     "fmt"
+    "strconv"
     "gitee.com/johng/gkvdb/gkvdb"
     "gitee.com/johng/gf/g/os/glog"
     "gitee.com/johng/gf/g/os/gtime"
-    "strconv"
 )
 
 func main() {
@@ -14,8 +14,11 @@ func main() {
         glog.Error(err)
     }
 
+
+
+
     t1 := gtime.Microsecond()
-    for i := 0; i < 200001; i++ {
+    for i := 0; i < 200000; i++ {
         key   := []byte("name" + strconv.Itoa(i))
         value := []byte("john" + strconv.Itoa(i))
         if err := db.Set(key, value); err != nil {
@@ -31,8 +34,16 @@ func main() {
     }
     fmt.Println("remove cost:", gtime.Microsecond() - t2)
 
-    items := db.Items(1000000)
-    fmt.Println(len(items), items)
+    //t3 := gtime.Microsecond()
+    //for i := 0; i < 200000; i++ {
+    //    key := []byte("name" + strconv.Itoa(i))
+    //    if r := db.Get(key); r != nil {
+    //        fmt.Println("value found for:", string(key))
+    //    }
+    //}
+    //fmt.Println("get cost:", gtime.Microsecond() - t3)
 
-    //select{}
+
+    items := db.Items(200000)
+    fmt.Println("items:", len(items), items)
 }

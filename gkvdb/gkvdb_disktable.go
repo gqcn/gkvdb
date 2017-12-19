@@ -114,7 +114,7 @@ func (db *DB) newTable(name string) (*Table, error) {
     }
     // 初始化相关服务
     table.initFileSpace()
-    //table.startAutoCompactingLoop()
+    table.startAutoCompactingLoop()
 
     // 保存数据表对象指针到全局数据库对象中
     table.db.tables.Set(name, table)
@@ -231,9 +231,10 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
         if table.mtsp.Contains(int(start), gMETA_BUCKET_SIZE) {
             continue
         }
+        //fmt.Println("mt range:", start, start + gMETA_BUCKET_SIZE)
         if b := gfile.GetBinContentByTwoOffsets(mtpf.File(), start, start + gMETA_BUCKET_SIZE); b != nil {
             for i := 0; i < gMETA_BUCKET_SIZE; i += gMETA_ITEM_SIZE {
-                if table.mtsp.Contains(i, gMETA_ITEM_SIZE) {
+                if table.mtsp.Contains(int(start) + i, gMETA_ITEM_SIZE) {
                     continue
                 }
                 buffer := b[i : i + gMETA_ITEM_SIZE]
@@ -241,21 +242,18 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
                 klen   := int(gbinary.DecodeBits(bits[64 : 72]))
                 vlen   := int(gbinary.DecodeBits(bits[72 : 96]))
                 if klen > 0 && vlen > 0 {
-                    start := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
-                    end   := start + int64(klen + vlen)
-                    data  := gfile.GetBinContentByTwoOffsets(dbpf.File(), start, end)
-                    keyb  := data[1 : 1 + klen]
-                    key   := string(keyb)
+                    dbstart := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
+                    dbend   := dbstart + int64(klen + vlen)
+                    data    := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbend)
+                    keyb    := data[1 : 1 + klen]
+                    key     := string(keyb)
                     // 内存表数据优先，并且保证内存表中已删除的数据不会被遍历出来
-                    if _, ok := m[key]; !ok {
-                        if _, ok := table.memt.get(keyb); !ok {
-                            m[key] = data[1 + klen : ]
-                            if len(m) == max {
-                                return m
-                            }
+                    if _, ok := table.memt.get(keyb); !ok {
+                        m[key] = data[1 + klen : ]
+                        if len(m) == max {
+                            return m
                         }
                     }
-
                 }
             }
         } else {
@@ -425,13 +423,16 @@ func (table *Table) getValueByKey(key []byte) ([]byte, error) {
 
 // 根据索引信息删除指定数据
 func (table *Table) removeDataByRecord(record *Record) error {
-    if err := table.removeDataFromDb(record); err != nil {
-        return err
-    }
+    // 优先从元数据中剔除掉
     if err := table.removeDataFromMt(record); err != nil {
         return err
     }
-
+    // 其次将数据块直接加入碎片管理器，
+    // 不用执行清零，因为元数据已经剔除，数据不完整，下一次重启的时候会自动检测为碎片
+    if err := table.removeDataFromDb(record); err != nil {
+        return err
+    }
+    // 最新更新索引信息
     if err := table.removeDataFromIx(record); err != nil {
         return err
     }
@@ -451,25 +452,10 @@ func (table *Table) removeDataFromMt(record *Record) error {
     if record.meta.match != 0 {
         return nil
     }
-    pf, err := table.mtfp.File()
-    if err != nil {
-        return err
-    }
-    defer pf.Close()
-
+    record.value       = nil
     record.meta.buffer = table.removeMeta(record.meta.buffer, record.meta.index)
     record.meta.size   = len(record.meta.buffer)
-    if record.meta.size == 0 {
-        // 如果列表被清空，那么添加整块空间到碎片管理器
-        table.addMtFileSpace(int(record.meta.start), record.meta.cap)
-    } else {
-        if _, err = pf.File().WriteAt(record.meta.buffer, record.meta.start); err != nil {
-            return err
-        }
-        // 如果列表分配大小比较实际大小超过bucket，那么进行空间切分，添加多余的空间到碎片管理器
-        table.checkAndResizeMtCap(record)
-    }
-    return nil
+    return table.updateMetaByRecord(record)
 }
 
 // 从索引中删除指定数据
@@ -604,34 +590,35 @@ func (table *Table) updateMetaByRecord(record *Record) error {
     }
     defer pf.Close()
 
-    // 二进制打包
-    bits := make([]gbinary.Bit, 0)
-    bits  = gbinary.EncodeBits(bits, record.hash64,           64)
-    bits  = gbinary.EncodeBits(bits, uint(record.data.klen),   8)
-    bits  = gbinary.EncodeBits(bits, uint(record.data.vlen),  24)
-    bits  = gbinary.EncodeBits(bits, uint(record.data.start/gDATA_BUCKET_SIZE), 40)
-    // 数据列表打包(判断位置进行覆盖或者插入)
-    record.meta.buffer = table.saveMeta(record.meta.buffer, gbinary.EncodeBitsToBytes(bits), record.meta.index, record.meta.match)
-    record.meta.size   = len(record.meta.buffer)
-    if record.meta.end <= 0 || record.meta.cap < record.meta.size {
-        // 不用的空间添加到碎片管理器
-        if record.meta.end > 0 && record.meta.cap > 0 {
-            table.addMtFileSpace(int(record.meta.start), record.meta.cap)
-        }
-        // 重新计算所需空间
-        if record.meta.cap < record.meta.size {
-            for {
-                record.meta.cap += gMETA_BUCKET_SIZE
-                if record.meta.cap >= record.meta.size {
-                    break
+    // 当record.value==nil时表示删除
+    if record.value != nil {
+        // 二进制打包
+        bits := make([]gbinary.Bit, 0)
+        bits  = gbinary.EncodeBits(bits, record.hash64,           64)
+        bits  = gbinary.EncodeBits(bits, uint(record.data.klen),   8)
+        bits  = gbinary.EncodeBits(bits, uint(record.data.vlen),  24)
+        bits  = gbinary.EncodeBits(bits, uint(record.data.start/gDATA_BUCKET_SIZE), 40)
+        // 数据列表打包(判断位置进行覆盖或者插入)
+        record.meta.buffer = table.saveMeta(record.meta.buffer, gbinary.EncodeBitsToBytes(bits), record.meta.index, record.meta.match)
+        record.meta.size   = len(record.meta.buffer)
+        if record.meta.end <= 0 || record.meta.cap < record.meta.size {
+            // 不用的空间添加到碎片管理器
+            if record.meta.end > 0 && record.meta.cap > 0 {
+                table.addMtFileSpace(int(record.meta.start), record.meta.cap)
+            }
+            // 重新计算所需空间
+            if record.meta.cap < record.meta.size {
+                for {
+                    record.meta.cap += gMETA_BUCKET_SIZE
+                    if record.meta.cap >= record.meta.size {
+                        break
+                    }
                 }
             }
+            record.meta.start = table.getMtFileSpace(record.meta.cap)
+            record.meta.end   = record.meta.start + int64(record.meta.cap)
         }
-        record.meta.start = table.getMtFileSpace(record.meta.cap)
-        record.meta.end   = record.meta.start + int64(record.meta.cap)
     }
-
-    //fmt.Println("meta write:", record.meta.start, record.meta.buffer)
 
     // size不够cap的对末尾进行补0占位(便于文件末尾分配空间)
     buffer := record.meta.buffer

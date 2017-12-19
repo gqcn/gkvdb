@@ -11,14 +11,16 @@ import (
 func (table *Table) initFileSpace() {
     table.mtsp = gfilespace.New()
     table.dbsp = gfilespace.New()
-    // 异步计算碎片详情
+    // 这里使用的是写锁定，锁定表的所有数据操作
+    table.mu.Lock()
+    // 异步进行碎片计算，计算完成后解除写锁定
     go table.recountFileSpace()
 }
 
 // 重新计算空间碎片信息
 // 必须锁起来防止数据变动引起计算不准确从而影响数据正确性
+// 碎片计算是按照 index、meta、data进行依次的关联查询，数据不完整则算作是碎片
 func (table *Table) recountFileSpace() {
-    table.mu.Lock()
     defer table.mu.Unlock()
 
     mtpf, _ := table.mtfp.File()
@@ -112,11 +114,12 @@ func (table *Table) recountFileSpace() {
     if start < int(end) {
         table.dbsp.AddBlock(start, int(end) - start)
     }
-    //fmt.Println("used mtsp:", len(usedmtsp.GetAllBlocks()))
-    //fmt.Println("used dbsp:", len(useddbsp.GetAllBlocks()))
 
-    //fmt.Println("mtsp:", len(db.mtsp.GetAllBlocks()))
-    //fmt.Println("dbsp:", len(db.dbsp.GetAllBlocks()))
+    //fmt.Println("used mtsp:", usedmtsp.GetAllBlocks())
+    //fmt.Println("used dbsp:", useddbsp.GetAllBlocks())
+    //
+    //fmt.Println("mtsp:", table.mtsp.GetAllBlocks())
+    //fmt.Println("dbsp:", table.dbsp.GetAllBlocks())
     //fmt.Println("time:", gtime.Microsecond() - t)
     //
     //os.Exit(1)
@@ -187,3 +190,9 @@ func (table *Table) getDbFileSpace(size int) int64 {
     }
     return -1
 }
+
+// For Test Only
+//func (table *Table) PrintAllFileSpaces() {
+//    fmt.Println("mt:", table.mtsp.GetAllBlocks())
+//    fmt.Println("db:", table.dbsp.GetAllBlocks())
+//}

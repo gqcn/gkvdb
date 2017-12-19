@@ -219,6 +219,7 @@ fmt.Println(tu2.Items(-1))
 1. [gkvdb的介绍及设计](http://johng.cn/gkvdb-brief/)
 1. [gkvdb v1.5的性能测试及与leveldb的性能对比](http://johng.cn/gkvdb-performance-test-1-5/)
 
-
+## TODO
+1. 底层数据文件操作时仍然使用的是更新操作，在异常情况下仍然存在丢失数据的风险，因此在底层数据文件操作时同样需要增加日志功能，使用数据“增加”替换掉数据“修改”，预计完成时间：2018-06；
 
 

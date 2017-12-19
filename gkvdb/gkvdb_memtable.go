@@ -36,7 +36,7 @@ func (mtable *MemTable) get(key []byte) ([]byte, bool) {
     defer mtable.mu.RUnlock()
 
     if v, ok := mtable.datamap[string(key)]; ok {
-        if len(v) == 0 {
+        if v == nil {
             return nil, true
         } else {
             return v, true
