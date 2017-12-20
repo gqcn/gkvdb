@@ -189,37 +189,30 @@ fmt.Println(db.Keys(-1))
 fmt.Println(db.Values(-1))
 
 // ======指定表的遍历=====
-// 两张表
-name1 := "user1"
-name2 := "user2"
-tu1, err := db.Table(name1)
+t1, err := db.Table("user1")
 if err != nil {
     fmt.Println(err)
 }
-tu2, err := db.Table(name2)
+t2, err := db.Table("user2")
 if err != nil {
     fmt.Println(err)
 }
 for i := 0; i < 10; i++ {
     key   := []byte("k_" + strconv.Itoa(i))
     value := []byte("v_" + strconv.Itoa(i))
-    tu1.Set(key, value)
+    t1.Set(key, value)
 }
 for i := 10; i < 20; i++ {
     key   := []byte("k_" + strconv.Itoa(i))
     value := []byte("v_" + strconv.Itoa(i))
-    tu2.Set(key, value)
+    t2.Set(key, value)
 }
 
-fmt.Println(tu1.Items(-1))
-fmt.Println(tu2.Items(-1))
+fmt.Println(t1.Items(-1))
+fmt.Println(t2.Items(-1))
 ```
 
 ## 文档
 1. [gkvdb的介绍及设计](http://johng.cn/gkvdb-brief/)
 1. [gkvdb v1.5的性能测试及与leveldb的性能对比](http://johng.cn/gkvdb-performance-test-1-5/)
-
-## TODO
-1. 底层数据文件操作时仍然使用的是更新操作，在异常情况下仍然存在丢失数据的风险，因此在底层数据文件操作时同样需要增加日志功能，使用数据“增加”替换掉数据“修改”，预计完成时间：2018-06；
-1. 进一步完善数据库启动时的数据完整性检测(ix, mt, db)；
 
