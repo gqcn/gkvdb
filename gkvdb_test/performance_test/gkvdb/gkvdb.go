@@ -125,7 +125,8 @@ func main() {
     //TestSet(count)
     //TestGet(count)
     //TestRemove(count)
-    //select {
-    //
-    //}
+    fmt.Println(db.Items(10))
+    select {
+
+    }
 }

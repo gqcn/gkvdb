@@ -83,10 +83,13 @@ func (table *Table) autoCompactingData() error {
                 if record.meta.end > 0 {
                     if err := table.getDataInfoByRecord(record); err == nil {
                         record.data.start -= int64(maxsize)
-                        record.data.cap   += maxsize
-                        table.updateDataByRecord(record)
-                        table.updateMetaByRecord(record)
-                        table.updateIndexByRecord(record)
+                        record.data.end   -= int64(maxsize)
+                        // 碎片空间往后挪
+                        table.addDbFileSpace(int(record.data.end), maxsize)
+                        // 更新已迁移的数据信息
+                        table.saveDataByRecord(record)
+                        table.saveMetaByRecord(record)
+                        table.saveIndexByRecord(record)
                     } else {
                         return err
                     }
@@ -140,10 +143,12 @@ func (table *Table) autoCompactingMeta() error {
             if err := table.getIndexInfoByRecord(record); err == nil {
                 if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), record.meta.start, record.meta.end); mtbuffer != nil {
                     record.meta.start -= int64(maxsize)
-                    record.meta.cap   += maxsize
+                    record.meta.end   -= int64(maxsize)
                     if _, err = mtpf.File().WriteAt(mtbuffer, record.meta.start); err == nil {
-                        table.updateIndexByRecord(record)
-                        table.checkAndResizeMtCap(record)
+                        // 碎片空间往后挪
+                        table.addMtFileSpace(int(record.meta.end), maxsize)
+                        // 更新已迁移的数据信息
+                        table.saveIndexByRecord(record)
                     } else {
                         return err
                     }

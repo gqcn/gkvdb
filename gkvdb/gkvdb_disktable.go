@@ -486,8 +486,7 @@ func (table *Table) insertDataByRecord(record *Record) error {
     table.dbsp.AddBlock(int(orecord.data.start), orecord.data.cap)
 
     // 判断是否需要DRH
-    table.checkDeepRehash(record)
-    return nil
+    return table.checkDeepRehash(record)
 }
 
 // 添加一项, cmp < 0往前插入，cmp >= 0往后插入
@@ -693,7 +692,7 @@ func (table *Table) checkDeepRehash(record *Record) error {
         return err
     }
 
-    // 写入重新分区后的索引信息
+    // 写入重新分区后的索引信息，需要写到末尾
     ixpf, err := table.ixfp.File()
     if err != nil {
         return err
