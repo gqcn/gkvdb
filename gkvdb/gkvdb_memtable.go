@@ -52,7 +52,7 @@ func (mtable *MemTable) items(max int) map[string][]byte {
 
     m := make(map[string][]byte)
     for k, v := range mtable.datamap {
-        if len(v) > 0 {
+        if v != nil {
             m[k] = v
             if len(m) == max {
                 break

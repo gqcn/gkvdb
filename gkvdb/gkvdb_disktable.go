@@ -422,27 +422,21 @@ func (table *Table) getValueByKey(key []byte) ([]byte, error) {
 }
 
 // 根据索引信息删除指定数据
+// 只需要更新元数据信息即可(为保证高可用这里依旧采用新增数据方式进行更新)，旧有数据回收进碎片管理器
 func (table *Table) removeDataByRecord(record *Record) error {
-    // 优先从元数据中剔除掉
+    // 保存查询记录对象，以便处理碎片
+    orecord := *record
+    // 优先从元数据中剔除掉，成功之后数据便不完整，即使后续操作失败，该数据也会被识别为碎片
     if err := table.removeDataFromMt(record); err != nil {
-        return err
-    }
-    // 其次将数据块直接加入碎片管理器，
-    // 不用执行清零，因为元数据已经剔除，数据不完整，下一次重启的时候会自动检测为碎片
-    if err := table.removeDataFromDb(record); err != nil {
         return err
     }
     // 最新更新索引信息
     if err := table.removeDataFromIx(record); err != nil {
         return err
     }
-    return nil
-}
-
-// 从数据文件中删除指定数据
-func (table *Table) removeDataFromDb(record *Record) error {
-    // 添加碎片
-    table.addDbFileSpace(int(record.data.start), record.data.cap)
+    // 数据写入成功之后，将旧数据添加进入碎片管理器
+    table.mtsp.AddBlock(int(orecord.meta.start), orecord.meta.cap)
+    table.dbsp.AddBlock(int(orecord.data.start), orecord.data.cap)
     return nil
 }
 
@@ -455,60 +449,43 @@ func (table *Table) removeDataFromMt(record *Record) error {
     record.value       = nil
     record.meta.buffer = table.removeMeta(record.meta.buffer, record.meta.index)
     record.meta.size   = len(record.meta.buffer)
-    return table.updateMetaByRecord(record)
+    return table.saveMetaByRecord(record)
 }
 
 // 从索引中删除指定数据
 func (table *Table) removeDataFromIx(record *Record) error {
-    return table.updateIndexByRecord(record)
+    return table.saveIndexByRecord(record)
 }
 
-// 检查并更新元数据分配大小与实际大小，如果有多余的空间，交给碎片管理器
-func (table *Table) checkAndResizeMtCap(record *Record) {
-    if int(record.meta.cap - record.meta.size) >= gMETA_BUCKET_SIZE {
-        realcap := getMetaCapBySize(record.meta.size)
-        diffcap := record.meta.cap - realcap
-        if diffcap >= gMETA_BUCKET_SIZE {
-            record.meta.cap = realcap
-            table.addMtFileSpace(int(record.meta.start)+int(realcap), diffcap)
-        }
-    }
-}
-
-// 检查并更新数据分配大小与实际大小，如果有多余的空间，交给碎片管理器
-func (table *Table) checkAndResizeDbCap(record *Record) {
-    if int(record.data.cap - record.data.size) >= gDATA_BUCKET_SIZE {
-        realcap := getDataCapBySize(record.data.size)
-        diffcap := record.data.cap - realcap
-        if diffcap >= gDATA_BUCKET_SIZE {
-            record.data.cap = realcap
-            table.addDbFileSpace(int(record.data.start)+int(realcap), diffcap)
-        }
-    }
-}
-
-// 插入一条KV数据
+// 写入一条KV数据
 func (table *Table) insertDataByRecord(record *Record) error {
     record.data.klen = len(record.key)
     record.data.vlen = len(record.value)
     record.data.size = record.data.klen + record.data.vlen + 1
 
+    // 保存查询记录对象，以便处理碎片
+    orecord := *record
+
     // 写入数据文件
-    if err := table.updateDataByRecord(record); err != nil {
+    if err := table.saveDataByRecord(record); err != nil {
         return err
     }
 
     // 写入元数据
-    if err := table.updateMetaByRecord(record); err != nil {
+    if err := table.saveMetaByRecord(record); err != nil {
         return err
     }
 
     // 根据record信息更新索引文件
-    if err := table.updateIndexByRecord(record); err != nil {
+    if err := table.saveIndexByRecord(record); err != nil {
         return err
     }
 
-    // 判断是否需要重复分区
+    // 数据写入成功之后，将旧数据添加进入碎片管理器
+    table.mtsp.AddBlock(int(orecord.meta.start), orecord.meta.cap)
+    table.dbsp.AddBlock(int(orecord.data.start), orecord.data.cap)
+
+    // 判断是否需要DRH
     table.checkDeepRehash(record)
     return nil
 }
@@ -542,31 +519,17 @@ func (table *Table) removeMeta(slice []byte, index int) []byte {
 }
 
 // 将数据写入到数据文件中，并更新信息到record
-func (table *Table) updateDataByRecord(record *Record) error {
+func (table *Table) saveDataByRecord(record *Record) error {
     pf, err := table.dbfp.File()
     if err != nil {
         return err
     }
     defer pf.Close()
-    // 判断是否额外分配键值存储空间
-    if record.data.end <= 0 || record.data.cap < record.data.size {
-        // 不用的空间添加到碎片管理器
-        if record.data.end > 0 && record.data.cap > 0 {
-            //fmt.Println("add db block", int(record.data.start), uint(record.data.cap))
-            table.addDbFileSpace(int(record.data.start), record.data.cap)
-        }
-        // 重新计算所需空间
-        if record.data.cap < record.data.size {
-            for {
-                record.data.cap += gDATA_BUCKET_SIZE
-                if record.data.cap >= record.data.size {
-                    break
-                }
-            }
-        }
-        record.data.start = table.getDbFileSpace(record.data.cap)
-        record.data.end   = record.data.start + int64(record.data.size)
-    }
+    // 为保证高可用，每一次都是额外分配键值存储空间，重新计算cap
+    record.data.cap   = getDataCapBySize(record.data.size)
+    record.data.start = table.getDbFileSpace(record.data.cap)
+    record.data.end   = record.data.start + int64(record.data.size)
+
     // vlen不够vcap的对末尾进行补0占位(便于文件末尾分配空间)
     buffer := make([]byte, 0)
     buffer  = append(buffer, byte(len(record.key)))
@@ -578,12 +541,12 @@ func (table *Table) updateDataByRecord(record *Record) error {
     if _, err = pf.File().WriteAt(buffer, record.data.start); err != nil {
         return err
     }
-    table.checkAndResizeDbCap(record)
+
     return nil
 }
 
 // 将数据写入到元数据文件中，并更新信息到record
-func (table *Table) updateMetaByRecord(record *Record) error {
+func (table *Table) saveMetaByRecord(record *Record) error {
     pf, err := table.mtfp.File()
     if err != nil {
         return err
@@ -601,23 +564,10 @@ func (table *Table) updateMetaByRecord(record *Record) error {
         // 数据列表打包(判断位置进行覆盖或者插入)
         record.meta.buffer = table.saveMeta(record.meta.buffer, gbinary.EncodeBitsToBytes(bits), record.meta.index, record.meta.match)
         record.meta.size   = len(record.meta.buffer)
-        if record.meta.end <= 0 || record.meta.cap < record.meta.size {
-            // 不用的空间添加到碎片管理器
-            if record.meta.end > 0 && record.meta.cap > 0 {
-                table.addMtFileSpace(int(record.meta.start), record.meta.cap)
-            }
-            // 重新计算所需空间
-            if record.meta.cap < record.meta.size {
-                for {
-                    record.meta.cap += gMETA_BUCKET_SIZE
-                    if record.meta.cap >= record.meta.size {
-                        break
-                    }
-                }
-            }
-            record.meta.start = table.getMtFileSpace(record.meta.cap)
-            record.meta.end   = record.meta.start + int64(record.meta.cap)
-        }
+        // 为保证高可用，每一次都是额外分配键值存储空间，重新计算cap
+        record.meta.cap    = getMetaCapBySize(record.meta.size)
+        record.meta.start  = table.getMtFileSpace(record.meta.cap)
+        record.meta.end    = record.meta.start + int64(record.meta.cap)
     }
 
     // size不够cap的对末尾进行补0占位(便于文件末尾分配空间)
@@ -630,12 +580,11 @@ func (table *Table) updateMetaByRecord(record *Record) error {
         return err
     }
 
-    table.checkAndResizeMtCap(record)
     return nil
 }
 
 // 根据record更新索引信息
-func (table *Table) updateIndexByRecord(record *Record) error {
+func (table *Table) saveIndexByRecord(record *Record) error {
     ixpf, err := table.ixfp.File()
     if err != nil {
         return err
@@ -757,10 +706,10 @@ func (table *Table) checkDeepRehash(record *Record) error {
     ixpf.File().WriteAt(ixbuffer, ixstart)
 
     // 修改老的索引信息
-    bits    := make([]gbinary.Bit, 0)
-    bits     = gbinary.EncodeBits(bits, uint(ixstart)/gINDEX_BUCKET_SIZE,  36)
-    bits     = gbinary.EncodeBits(bits, uint(inc) - gDEFAULT_PART_SIZE,    19)
-    bits     = gbinary.EncodeBits(bits, 1,                                  1)
+    bits := make([]gbinary.Bit, 0)
+    bits  = gbinary.EncodeBits(bits, uint(ixstart)/gINDEX_BUCKET_SIZE,  36)
+    bits  = gbinary.EncodeBits(bits, uint(inc) - gDEFAULT_PART_SIZE,    19)
+    bits  = gbinary.EncodeBits(bits, 1,                                  1)
     if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
         return err
     }

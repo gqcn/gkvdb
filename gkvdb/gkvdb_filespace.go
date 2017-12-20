@@ -33,7 +33,7 @@ func (table *Table) recountFileSpace() {
     useddbsp := gfilespace.New()
     ixbuffer := gfile.GetBinContents(table.getIndexFilePath())
 
-    // 并发计算碎片
+    // 并发计算ix,mt,db文件的使用情况
     var wg sync.WaitGroup
     group := gINDEX_BUCKET_SIZE
     piece := len(ixbuffer)/group
@@ -90,7 +90,7 @@ func (table *Table) recountFileSpace() {
     }
     wg.Wait()
 
-    // 计算元数据碎片
+    // 根据文件使用情况计算文件空白空间，即元数据碎片
     start  := 0
     end, _ := mtpf.File().Seek(0, 2)
     for _, v := range usedmtsp.GetAllBlocks() {
@@ -102,7 +102,7 @@ func (table *Table) recountFileSpace() {
     if start < int(end) {
         table.mtsp.AddBlock(start, int(end) - start)
     }
-    // 计算数据碎片
+    // 根据文件使用情况计算文件空白空间，即数据碎片
     start  = 0
     end, _ = dbpf.File().Seek(0, 2)
     for _, v := range useddbsp.GetAllBlocks() {
