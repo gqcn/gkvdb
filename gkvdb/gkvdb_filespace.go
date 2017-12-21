@@ -5,6 +5,7 @@ import (
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gfilespace"
     "gitee.com/johng/gf/g/encoding/gbinary"
+    "fmt"
 )
 
 // 初始化碎片管理器
@@ -192,7 +193,9 @@ func (table *Table) getDbFileSpace(size int) int64 {
 }
 
 // For Test Only
-//func (table *Table) PrintAllFileSpaces() {
-//    fmt.Println("mt:", table.mtsp.GetAllBlocks())
-//    fmt.Println("db:", table.dbsp.GetAllBlocks())
-//}
+func (table *Table) PrintAllFileSpaces() {
+    table.mu.Lock()
+    defer table.mu.Unlock()
+    fmt.Println("mt:", table.mtsp.GetAllBlocks())
+    fmt.Println("db:", table.dbsp.GetAllBlocks())
+}

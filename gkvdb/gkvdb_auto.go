@@ -14,11 +14,11 @@ func (table *Table) startAutoCompactingLoop() {
     go func() {
         for !table.isClosed() {
             if err := table.autoCompactingData(); err != nil {
-                glog.Error(err)
+                glog.Error("data compacting error:", err)
                 time.Sleep(time.Second)
             }
             if err := table.autoCompactingMeta(); err != nil {
-                glog.Error(err)
+                glog.Error("meta compacting error:", err)
                 time.Sleep(time.Second)
             }
             time.Sleep(gAUTO_COMPACTING_TIMEOUT*time.Millisecond)
@@ -84,12 +84,12 @@ func (table *Table) autoCompactingData() error {
                     if err := table.getDataInfoByRecord(record); err == nil {
                         record.data.start -= int64(maxsize)
                         record.data.end   -= int64(maxsize)
-                        // 碎片空间往后挪
-                        table.addDbFileSpace(int(record.data.end), maxsize)
                         // 更新已迁移的数据信息
                         table.saveDataByRecord(record)
                         table.saveMetaByRecord(record)
                         table.saveIndexByRecord(record)
+                        // 数据迁移成功之后再将碎片空间往后挪
+                        table.addDbFileSpace(int(record.data.start) + record.data.cap, maxsize)
                     } else {
                         return err
                     }
@@ -145,11 +145,13 @@ func (table *Table) autoCompactingMeta() error {
                     record.meta.start -= int64(maxsize)
                     record.meta.end   -= int64(maxsize)
                     if _, err = mtpf.File().WriteAt(mtbuffer, record.meta.start); err == nil {
-                        // 碎片空间往后挪
-                        table.addMtFileSpace(int(record.meta.end), maxsize)
                         // 更新已迁移的数据信息
                         table.saveIndexByRecord(record)
+                        // 元数据迁移成功之后再将碎片空间往后挪
+                        table.addMtFileSpace(int(record.meta.start) + record.meta.cap, maxsize)
                     } else {
+                        //fmt.Println(maxsize, mtstart)
+                        //fmt.Println(record)
                         return err
                     }
                 }

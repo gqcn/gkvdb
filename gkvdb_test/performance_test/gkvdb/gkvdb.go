@@ -7,6 +7,7 @@ import (
     "bytes"
     "gitee.com/johng/gkvdb/gkvdb"
     "gitee.com/johng/gf/g/os/gtime"
+    "time"
 )
 
 // 数据库对象指针
@@ -121,12 +122,12 @@ func TestRemove(count int) {
 
 
 func main() {
-    //count := 1000000
-    //TestSet(count)
-    //TestGet(count)
-    //TestRemove(count)
+    count := 300000
+    TestSet(count)
+    TestGet(count)
+    TestRemove(count)
     fmt.Println(db.Items(10))
-    select {
-
-    }
+    time.Sleep(3*time.Second)
+    table, _ := db.Table("default")
+    table.PrintAllFileSpaces()
 }

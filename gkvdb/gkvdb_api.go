@@ -1,7 +1,5 @@
 package gkvdb
 
-import "fmt"
-
 // =================================================================================
 // 数据库操作
 // =================================================================================
@@ -100,7 +98,6 @@ func (table *Table) Remove(key []byte) error {
 func (table *Table) Items(max int) map[string][]byte {
     // 先查询内存表
     m := table.memt.items(max)
-    fmt.Println("memt items:", m)
     if max == -1 || max - len(m) > 0 {
         // 数据不够再遍历磁盘
         return table.items(max - len(m), m)

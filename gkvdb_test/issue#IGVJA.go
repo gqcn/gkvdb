@@ -14,9 +14,6 @@ func main() {
         glog.Error(err)
     }
 
-
-
-
     t1 := gtime.Microsecond()
     for i := 0; i < 200000; i++ {
         key   := []byte("name" + strconv.Itoa(i))

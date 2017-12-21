@@ -114,7 +114,7 @@ func (db *DB) newTable(name string) (*Table, error) {
     }
     // 初始化相关服务
     table.initFileSpace()
-    table.startAutoCompactingLoop()
+    //table.startAutoCompactingLoop()
 
     // 保存数据表对象指针到全局数据库对象中
     table.db.tables.Set(name, table)
@@ -343,6 +343,8 @@ func (table *Table) getDataInfoByRecord(record *Record) error {
                         dbsize  := klen + vlen + 1
                         dbend   := dbstart + int64(dbsize)
                         if data := table.getDataByOffset(dbstart, dbend); data != nil {
+                            //fmt.Println(hash64, record.hash64)
+                            //fmt.Println(string(record.key), string(data[1 : 1 + klen]))
                             if cmp = bytes.Compare(record.key, data[1 : 1 + klen]); cmp == 0 {
                                 record.value       = data[1 + klen:]
                                 record.data.klen   = klen
@@ -430,11 +432,11 @@ func (table *Table) removeDataByRecord(record *Record) error {
     if err := table.removeDataFromMt(record); err != nil {
         return err
     }
-    // 最新更新索引信息
+    // 其次更新索引信息
     if err := table.removeDataFromIx(record); err != nil {
         return err
     }
-    // 数据写入成功之后，将旧数据添加进入碎片管理器
+    // 数据删除操作执行成功之后，才将旧数据添加进入碎片管理器
     table.mtsp.AddBlock(int(orecord.meta.start), orecord.meta.cap)
     table.dbsp.AddBlock(int(orecord.data.start), orecord.data.cap)
     return nil
@@ -442,10 +444,6 @@ func (table *Table) removeDataByRecord(record *Record) error {
 
 // 从元数据中删除指定数据
 func (table *Table) removeDataFromMt(record *Record) error {
-    // 如果没有匹配到数据，那么也没必要执行删除了
-    if record.meta.match != 0 {
-        return nil
-    }
     record.value       = nil
     record.meta.buffer = table.removeMeta(record.meta.buffer, record.meta.index)
     record.meta.size   = len(record.meta.buffer)
@@ -481,7 +479,7 @@ func (table *Table) insertDataByRecord(record *Record) error {
         return err
     }
 
-    // 数据写入成功之后，将旧数据添加进入碎片管理器
+    // 数据写入操作执行成功之后，才将旧数据添加进入碎片管理器
     table.mtsp.AddBlock(int(orecord.meta.start), orecord.meta.cap)
     table.dbsp.AddBlock(int(orecord.data.start), orecord.data.cap)
 
@@ -518,6 +516,7 @@ func (table *Table) removeMeta(slice []byte, index int) []byte {
 }
 
 // 将数据写入到数据文件中，并更新信息到record
+// 写入
 func (table *Table) saveDataByRecord(record *Record) error {
     pf, err := table.dbfp.File()
     if err != nil {
@@ -545,6 +544,7 @@ func (table *Table) saveDataByRecord(record *Record) error {
 }
 
 // 将数据写入到元数据文件中，并更新信息到record
+// 写入|删除
 func (table *Table) saveMetaByRecord(record *Record) error {
     pf, err := table.mtfp.File()
     if err != nil {
@@ -552,7 +552,7 @@ func (table *Table) saveMetaByRecord(record *Record) error {
     }
     defer pf.Close()
 
-    // 当record.value==nil时表示删除
+    // 当record.value==nil时表示删除，否则表示写入
     if record.value != nil {
         // 二进制打包
         bits := make([]gbinary.Bit, 0)
@@ -563,10 +563,13 @@ func (table *Table) saveMetaByRecord(record *Record) error {
         // 数据列表打包(判断位置进行覆盖或者插入)
         record.meta.buffer = table.saveMeta(record.meta.buffer, gbinary.EncodeBitsToBytes(bits), record.meta.index, record.meta.match)
         record.meta.size   = len(record.meta.buffer)
+    }
+
+    if record.meta.size > 0 {
         // 为保证高可用，每一次都是额外分配键值存储空间，重新计算cap
         record.meta.cap    = getMetaCapBySize(record.meta.size)
         record.meta.start  = table.getMtFileSpace(record.meta.cap)
-        record.meta.end    = record.meta.start + int64(record.meta.cap)
+        record.meta.end    = record.meta.start + int64(record.meta.size)
     }
 
     // size不够cap的对末尾进行补0占位(便于文件末尾分配空间)
@@ -614,10 +617,6 @@ func (table *Table) checkDeepRehash(record *Record) error {
     if record.meta.size < gMAX_META_LIST_SIZE {
         return nil
     }
-    //fmt.Println("need rehash for:", record)
-    // 将旧空间添加进碎片管理
-    table.addMtFileSpace(int(record.meta.start), record.meta.cap)
-
     // 计算分区增量，保证数据散列(分区后在同一请求处理中不再进行二次分区)
     // 分区增量必须为奇数，保证分区数据分配均匀
     inc := gDEFAULT_PART_SIZE + record.index.inc + 1
@@ -712,6 +711,9 @@ func (table *Table) checkDeepRehash(record *Record) error {
     if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
         return err
     }
+
+    // 操作成功之后才会将旧空间添加进碎片管理
+    table.addMtFileSpace(int(record.meta.start), record.meta.cap)
 
     return nil
 }
