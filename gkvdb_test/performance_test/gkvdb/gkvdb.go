@@ -7,7 +7,6 @@ import (
     "bytes"
     "gitee.com/johng/gkvdb/gkvdb"
     "gitee.com/johng/gf/g/os/gtime"
-    "time"
 )
 
 // 数据库对象指针
@@ -126,8 +125,4 @@ func main() {
     TestSet(count)
     TestGet(count)
     TestRemove(count)
-    fmt.Println(db.Items(10))
-    time.Sleep(3*time.Second)
-    table, _ := db.Table("default")
-    table.PrintAllFileSpaces()
 }

@@ -15,7 +15,7 @@ func main() {
     }
 
     t1 := gtime.Microsecond()
-    for i := 0; i < 200000; i++ {
+    for i := 0; i < 200001; i++ {
         key   := []byte("name" + strconv.Itoa(i))
         value := []byte("john" + strconv.Itoa(i))
         if err := db.Set(key, value); err != nil {

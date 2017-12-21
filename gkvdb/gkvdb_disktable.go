@@ -51,10 +51,10 @@ type Meta struct {
 type Data struct {
     start  int64  // 数据文件中的开始地址
     end    int64  // 数据文件中的结束地址
-    cap    int   // 数据允许存放的的最大长度（用以修改对比）
-    size   int   // klen + vlen
-    klen   int   // 键名大小
-    vlen   int   // 键值大小(byte)
+    cap    int    // 数据允许存放的的最大长度（用以修改对比）
+    size   int    // klen + vlen
+    klen   int    // 键名大小
+    vlen   int    // 键值大小(byte)
 }
 
 // KV数据检索记录
@@ -114,7 +114,7 @@ func (db *DB) newTable(name string) (*Table, error) {
     }
     // 初始化相关服务
     table.initFileSpace()
-    //table.startAutoCompactingLoop()
+    table.startAutoCompactingLoop()
 
     // 保存数据表对象指针到全局数据库对象中
     table.db.tables.Set(name, table)
@@ -210,6 +210,7 @@ func (table *Table) remove(key []byte) error {
 }
 
 // 遍历，注意该方法遍历只针对磁盘化后的数据，并且不包括中间binlog数据
+// 该遍历会依次按照ix、mt、db文件进行遍历，并检测数据完整性，不完整的数据不会返回
 func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
     table.mu.RLock()
     defer table.mu.RUnlock()
@@ -226,18 +227,24 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
     }
     defer dbpf.Close()
 
-    for start := int64(0); ; start += gMETA_BUCKET_SIZE {
-        // 如果包含在碎片中，那么忽略
-        if table.mtsp.Contains(int(start), gMETA_BUCKET_SIZE) {
+    ixbuffer := gfile.GetBinContents(table.getIndexFilePath())
+    for i := 0; i < len(ixbuffer); i += gINDEX_BUCKET_SIZE {
+        bits := gbinary.DecodeBytesToBits(ixbuffer[i: i+gINDEX_BUCKET_SIZE])
+        if gbinary.DecodeBits(bits[55: 56]) != 0 {
             continue
         }
-        //fmt.Println("mt range:", start, start + gMETA_BUCKET_SIZE)
-        if b := gfile.GetBinContentByTwoOffsets(mtpf.File(), start, start + gMETA_BUCKET_SIZE); b != nil {
-            for i := 0; i < gMETA_BUCKET_SIZE; i += gMETA_ITEM_SIZE {
-                if table.mtsp.Contains(int(start) + i, gMETA_ITEM_SIZE) {
+        mtindex := int(gbinary.DecodeBits(bits[ 0 : 36]))*gMETA_BUCKET_SIZE
+        mtsize  := int(gbinary.DecodeBits(bits[36 : 55]))*gMETA_ITEM_SIZE
+        // 如果元数据包含在碎片中，那么忽略
+        if table.mtsp.Contains(mtindex, mtsize) {
+            continue
+        }
+        if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), int64(mtindex), int64(mtindex + mtsize)); mtbuffer != nil {
+            for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
+                if table.mtsp.Contains(int(mtindex) + i, gMETA_ITEM_SIZE) {
                     continue
                 }
-                buffer := b[i : i + gMETA_ITEM_SIZE]
+                buffer := mtbuffer[i : i + gMETA_ITEM_SIZE]
                 bits   := gbinary.DecodeBytesToBits(buffer)
                 klen   := int(gbinary.DecodeBits(bits[64 : 72]))
                 vlen   := int(gbinary.DecodeBits(bits[72 : 96]))
@@ -256,8 +263,6 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
                     }
                 }
             }
-        } else {
-            break
         }
     }
     return m
@@ -437,8 +442,8 @@ func (table *Table) removeDataByRecord(record *Record) error {
         return err
     }
     // 数据删除操作执行成功之后，才将旧数据添加进入碎片管理器
-    table.mtsp.AddBlock(int(orecord.meta.start), orecord.meta.cap)
-    table.dbsp.AddBlock(int(orecord.data.start), orecord.data.cap)
+    table.addMtFileSpace(int(orecord.meta.start), orecord.meta.cap)
+    table.addDbFileSpace(int(orecord.data.start), orecord.data.cap)
     return nil
 }
 
@@ -480,8 +485,8 @@ func (table *Table) insertDataByRecord(record *Record) error {
     }
 
     // 数据写入操作执行成功之后，才将旧数据添加进入碎片管理器
-    table.mtsp.AddBlock(int(orecord.meta.start), orecord.meta.cap)
-    table.dbsp.AddBlock(int(orecord.data.start), orecord.data.cap)
+    table.addMtFileSpace(int(orecord.meta.start), orecord.meta.cap)
+    table.addDbFileSpace(int(orecord.data.start), orecord.data.cap)
 
     // 判断是否需要DRH
     return table.checkDeepRehash(record)

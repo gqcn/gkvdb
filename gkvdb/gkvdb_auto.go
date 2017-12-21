@@ -7,6 +7,7 @@ import (
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
+    "errors"
 )
 
 // 数据文件自动整理
@@ -58,6 +59,8 @@ func (table *Table) autoCompactingData() error {
         return nil
     }
 
+    // 返回参数
+    var retmsg error = nil
     dbpath  := table.getDataFilePath()
     dbsize  := gfile.Size(dbpath)
     dbstart := index + int64(maxsize)
@@ -65,41 +68,57 @@ func (table *Table) autoCompactingData() error {
         // 如果碎片正好在文件末尾,那么直接truncate
         return os.Truncate(dbpath, int64(index))
     } else {
-        dbpf, err := table.dbfp.File()
-        if err != nil {
-            return err
-        }
-        defer dbpf.Close()
-        // 为防止截止位置超出文件长度，这里先获取键名长度
-        if buffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbstart + 1); buffer != nil {
-            klen   := gbinary.DecodeToUint8(buffer)
-            key    := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart + 1, dbstart + 1 + int64(klen))
-            record := &Record {
-                hash64  : uint(getHash64(key)),
-                key     : key,
-            }
-            // 查找对应数据的索引信息，并执行更新
-            if err := table.getIndexInfoByRecord(record); err == nil {
-                if record.meta.end > 0 {
-                    if err := table.getDataInfoByRecord(record); err == nil {
-                        record.data.start -= int64(maxsize)
-                        record.data.end   -= int64(maxsize)
-                        // 更新已迁移的数据信息
-                        table.saveDataByRecord(record)
-                        table.saveMetaByRecord(record)
-                        table.saveIndexByRecord(record)
-                        // 数据迁移成功之后再将碎片空间往后挪
-                        table.addDbFileSpace(int(record.data.start) + record.data.cap, maxsize)
+        if dbpf, retmsg := table.dbfp.File(); retmsg == nil {
+            defer dbpf.Close()
+            // 为防止截止位置超出文件长度，这里先获取键名长度
+            if buffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbstart + 1); buffer != nil {
+                klen   := gbinary.DecodeToUint8(buffer)
+                key    := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart + 1, dbstart + 1 + int64(klen))
+                record := &Record {
+                    hash64  : uint(getHash64(key)),
+                    key     : key,
+                }
+                // 查找对应数据的索引信息，并执行更新
+                if retmsg = table.getIndexInfoByRecord(record); retmsg == nil {
+                    if record.meta.end > 0 {
+                        if retmsg = table.getDataInfoByRecord(record); retmsg == nil {
+                            if dbbuffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), record.data.start, record.data.end); dbbuffer != nil {
+                                record.data.start -= int64(maxsize)
+                                record.data.end   -= int64(maxsize)
+                                if _, retmsg = dbpf.File().WriteAt(dbbuffer, record.data.start); retmsg == nil {
+                                    // 保存查询记录对象，以便处理碎片
+                                    orecord := *record
+                                    // 更新已迁移的元数据信息
+                                    if retmsg = table.saveMetaByRecord(record); retmsg == nil {
+                                        // 更新已迁移的索引信息
+                                        if retmsg = table.saveIndexByRecord(record); retmsg == nil {
+                                            // 数据迁移成功之后再将碎片空间往后挪
+                                            table.addDbFileSpace(int(record.data.start) + record.data.cap, maxsize)
+                                            // 数据写入操作执行成功之后，才将旧数据添加进入碎片管理器
+                                            table.addMtFileSpace(int(orecord.meta.start), orecord.meta.cap)
+                                        }
+                                    }
+                                }
+                            } else {
+                                retmsg = errors.New("get data buffer nil")
+                            }
+                        }
                     } else {
-                        return err
+                        // 如果找不到对应的索引信息，那么表示该数据区块为碎片
+                        table.addDbFileSpace(int(record.data.start), record.data.cap)
+                        retmsg = errors.New("invalid data buffer: meta info not found")
                     }
                 }
             } else {
-                return err
+                retmsg = errors.New("get next data buffer nil")
             }
         }
     }
-    return nil
+    // 如果执行失败，那么将碎片重新添加进入碎片管理器
+    if retmsg != nil {
+        table.addDbFileSpace(int(index), maxsize)
+    }
+    return retmsg
 }
 
 // 元数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
@@ -122,43 +141,48 @@ func (table *Table) autoCompactingMeta() error {
     if index < 0 {
         return nil
     }
+
+    // 返回参数
+    var retmsg error = nil
     mtsize  := gfile.Size(table.getMetaFilePath())
     mtstart := index + int64(maxsize)
     if mtstart == mtsize {
         return os.Truncate(table.getMetaFilePath(), int64(index))
     } else {
-        mtpf, err := table.mtfp.File()
-        if err != nil {
-            return err
-        }
-        defer mtpf.Close()
-        // 找到对应空闲块下一条meta item数据
-        if buffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtstart, mtstart + gMETA_ITEM_SIZE); buffer != nil {
-            bits   := gbinary.DecodeBytesToBits(buffer)
-            hash64 := gbinary.DecodeBits(bits[0 : 64])
-            record := &Record {
-                hash64  : hash64,
-            }
-            // 查找对应的索引信息，并执行更新
-            if err := table.getIndexInfoByRecord(record); err == nil {
-                if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), record.meta.start, record.meta.end); mtbuffer != nil {
-                    record.meta.start -= int64(maxsize)
-                    record.meta.end   -= int64(maxsize)
-                    if _, err = mtpf.File().WriteAt(mtbuffer, record.meta.start); err == nil {
-                        // 更新已迁移的数据信息
-                        table.saveIndexByRecord(record)
-                        // 元数据迁移成功之后再将碎片空间往后挪
-                        table.addMtFileSpace(int(record.meta.start) + record.meta.cap, maxsize)
+        if mtpf, retmsg := table.mtfp.File(); retmsg == nil {
+            defer mtpf.Close()
+            // 找到对应空闲块下一条meta item数据
+            if buffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtstart, mtstart + gMETA_ITEM_SIZE); buffer != nil {
+                bits   := gbinary.DecodeBytesToBits(buffer)
+                hash64 := gbinary.DecodeBits(bits[0 : 64])
+                record := &Record {
+                    hash64  : hash64,
+                }
+                // 查找对应的索引信息，并执行更新
+                if retmsg = table.getIndexInfoByRecord(record); retmsg == nil {
+                    if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), record.meta.start, record.meta.end); mtbuffer != nil {
+                        record.meta.start -= int64(maxsize)
+                        record.meta.end   -= int64(maxsize)
+                        if _, retmsg = mtpf.File().WriteAt(mtbuffer, record.meta.start); retmsg == nil {
+                            // 更新已迁移的索引信息，随后不用处理旧有位置的元数据内容，更新索引成功之后旧有位置将被标识为碎片
+                            if retmsg = table.saveIndexByRecord(record); retmsg == nil {
+                                // 元数据迁移成功之后再将碎片空间往后挪
+                                table.addMtFileSpace(int(record.meta.start) + record.meta.cap, maxsize)
+                            }
+                        }
                     } else {
-                        //fmt.Println(maxsize, mtstart)
-                        //fmt.Println(record)
-                        return err
+                        retmsg = errors.New("get mtbuffer nil")
                     }
                 }
             } else {
-                return err
+                retmsg = errors.New("get next meta buffer nil")
             }
         }
     }
-    return nil
+
+    // 如果执行失败，那么将碎片重新添加进入碎片管理器
+    if retmsg != nil {
+        table.addMtFileSpace(int(index), maxsize)
+    }
+    return retmsg
 }
