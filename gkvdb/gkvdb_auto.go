@@ -154,7 +154,7 @@ func (table *Table) autoCompactingMeta() error {
             // 找到对应空闲块下一条meta item数据
             if buffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtstart, mtstart + gMETA_ITEM_SIZE); buffer != nil {
                 bits   := gbinary.DecodeBytesToBits(buffer)
-                hash64 := gbinary.DecodeBits(bits[0 : 64])
+                hash64 := gbinary.DecodeBitsToUint(bits[0 : 64])
                 record := &Record {
                     hash64  : hash64,
                 }

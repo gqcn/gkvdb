@@ -325,7 +325,7 @@ func (table *Table) getDataInfoByRecord(record *Record) error {
                 mid     = int((min + max) / 2)
                 buffer := record.meta.buffer[mid*gMETA_ITEM_SIZE : mid*gMETA_ITEM_SIZE + gMETA_ITEM_SIZE]
                 bits   := gbinary.DecodeBytesToBits(buffer)
-                hash64 := gbinary.DecodeBits(bits[0 : 64])
+                hash64 := gbinary.DecodeBitsToUint(bits[0 : 64])
                 if record.hash64 < hash64 {
                     max = mid - 1
                     cmp = -1
@@ -561,10 +561,10 @@ func (table *Table) saveMetaByRecord(record *Record) error {
     if record.value != nil {
         // 二进制打包
         bits := make([]gbinary.Bit, 0)
-        bits  = gbinary.EncodeBits(bits, record.hash64,           64)
-        bits  = gbinary.EncodeBits(bits, uint(record.data.klen),   8)
-        bits  = gbinary.EncodeBits(bits, uint(record.data.vlen),  24)
-        bits  = gbinary.EncodeBits(bits, uint(record.data.start/gDATA_BUCKET_SIZE), 40)
+        bits  = gbinary.EncodeBitsWithUint(bits, record.hash64,                    64)
+        bits  = gbinary.EncodeBits(bits, record.data.klen,                          8)
+        bits  = gbinary.EncodeBits(bits, record.data.vlen,                         24)
+        bits  = gbinary.EncodeBits(bits, int(record.data.start/gDATA_BUCKET_SIZE), 40)
         // 数据列表打包(判断位置进行覆盖或者插入)
         record.meta.buffer = table.saveMeta(record.meta.buffer, gbinary.EncodeBitsToBytes(bits), record.meta.index, record.meta.match)
         record.meta.size   = len(record.meta.buffer)
@@ -602,9 +602,9 @@ func (table *Table) saveIndexByRecord(record *Record) error {
     if record.meta.size > 0 {
         // 添加/修改/部分删除
         bits  := make([]gbinary.Bit, 0)
-        bits   = gbinary.EncodeBits(bits, uint(record.meta.start/gMETA_BUCKET_SIZE),   36)
-        bits   = gbinary.EncodeBits(bits, uint(record.meta.size/gMETA_ITEM_SIZE),      19)
-        bits   = gbinary.EncodeBits(bits, 0,                                            1)
+        bits   = gbinary.EncodeBits(bits, int(record.meta.start/gMETA_BUCKET_SIZE),   36)
+        bits   = gbinary.EncodeBits(bits, record.meta.size/gMETA_ITEM_SIZE,           19)
+        bits   = gbinary.EncodeBits(bits, 0,                                           1)
         buffer = gbinary.EncodeBitsToBytes(bits)
     } else {
         // 数据全部删除完，标记为0
@@ -634,7 +634,7 @@ func (table *Table) checkDeepRehash(record *Record) error {
         for i := 0; i < record.meta.size; i += gMETA_ITEM_SIZE {
             buffer := record.meta.buffer[i : i + gMETA_ITEM_SIZE]
             bits   := gbinary.DecodeBytesToBits(buffer)
-            hash64 := gbinary.DecodeBits(bits[0 : 64])
+            hash64 := gbinary.DecodeBitsToUint(bits[0 : 64])
             part   := int(hash64%uint(inc))
             if _, ok := pmap[part]; !ok {
                 pmap[part] = make([]byte, 0)
@@ -671,9 +671,9 @@ func (table *Table) checkDeepRehash(record *Record) error {
         part := i
         if v, ok := pmap[part]; ok {
             bits     := make([]gbinary.Bit, 0)
-            bits      = gbinary.EncodeBits(bits, uint(tmpstart)/gMETA_BUCKET_SIZE,   36)
-            bits      = gbinary.EncodeBits(bits, uint(len(v))/gMETA_ITEM_SIZE,       19)
-            bits      = gbinary.EncodeBits(bits, 0,                                   1)
+            bits      = gbinary.EncodeBits(bits, int(tmpstart)/gMETA_BUCKET_SIZE,   36)
+            bits      = gbinary.EncodeBits(bits, len(v)/gMETA_ITEM_SIZE,            19)
+            bits      = gbinary.EncodeBits(bits, 0,                                  1)
             mtcap    := getMetaCapBySize(len(v))
             tmpstart += int64(mtcap)
             ixbuffer  = append(ixbuffer, gbinary.EncodeBitsToBytes(bits)...)
@@ -710,9 +710,9 @@ func (table *Table) checkDeepRehash(record *Record) error {
 
     // 修改老的索引信息
     bits := make([]gbinary.Bit, 0)
-    bits  = gbinary.EncodeBits(bits, uint(ixstart)/gINDEX_BUCKET_SIZE,  36)
-    bits  = gbinary.EncodeBits(bits, uint(inc) - gDEFAULT_PART_SIZE,    19)
-    bits  = gbinary.EncodeBits(bits, 1,                                  1)
+    bits  = gbinary.EncodeBits(bits, int(ixstart)/gINDEX_BUCKET_SIZE,  36)
+    bits  = gbinary.EncodeBits(bits, inc - gDEFAULT_PART_SIZE,         19)
+    bits  = gbinary.EncodeBits(bits, 1,                                 1)
     if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
         return err
     }
