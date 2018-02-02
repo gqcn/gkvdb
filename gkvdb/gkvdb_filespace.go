@@ -139,6 +139,7 @@ func (table *Table) addMtFileSpace(index int, size int) {
     table.mtsp.AddBlock(index, size)
 }
 
+// 申请一块可用的元数据文件空闲块
 func (table *Table) getMtFileSpace(size int) int64 {
     i, s := table.mtsp.GetBlock(size)
     if i >= 0 {
@@ -168,6 +169,7 @@ func (table *Table) addDbFileSpace(index int, size int) {
     table.dbsp.AddBlock(index, size)
 }
 
+// 申请一块可用的数据文件空闲块
 func (table *Table) getDbFileSpace(size int) int64 {
     i, s := table.dbsp.GetBlock(size)
     if i >= 0 {
@@ -184,7 +186,7 @@ func (table *Table) getDbFileSpace(size int) int64 {
         defer pf.Close()
 
         start, err := pf.File().Seek(0, 2)
-        if err != nil {
+        if err != nil || (start + int64(size)) > gMAX_DATA_FILE_SIZE {
             return -1
         }
         return start

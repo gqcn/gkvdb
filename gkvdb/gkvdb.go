@@ -25,21 +25,23 @@ import (
 )
 
 const (
-    gDEFAULT_PART_SIZE       = 100000                   // 默认哈希表分区大小
-    gMAX_TABLE_SIZE          = 0xFF                     // 表名最大长度(255byte)
-    gMAX_KEY_SIZE            = 0xFF                     // 键名最大长度(255byte)
-    gMAX_VALUE_SIZE          = 0xFFFFFF                 // 键值最大长度(16MB)
-    gMETA_ITEM_SIZE          = 17                       // 元数据单项大小(byte)
-    gMAX_META_LIST_SIZE      = 65535*gMETA_ITEM_SIZE    // 阶数，元数据列表最大大小(byte)
-    gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小(byte)
-    gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
-    gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
-    gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
-    gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
-    gBINLOG_AUTO_SYNCING     = 100                      // binlog自动同步到磁盘的时间(毫秒)
-    gAUTO_COMPACTING_MINSIZE = 512                      // 当空闲块大小>=该大小时，对其进行数据整理
-    gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
-    gBINLOG_MAX_LENGTH       = 200000                   // binlog临时队列最大长度，超过该长度则强制性阻塞同步到数据文件
+    gDEFAULT_PART_SIZE         = 100000                   // 默认哈希表分区大小
+    gMAX_BINLOG_LENGTH         = 200000                   // binlog临时队列最大长度，超过该长度则强制性阻塞同步到数据文件
+    gMAX_TABLE_SIZE            = 0xFF                     // 表名最大长度(255byte)
+    gMAX_KEY_SIZE              = 0xFF                     // 键名最大长度(255byte)
+    gMAX_VALUE_SIZE            = 0xFFFFFF                 // 键值最大长度(16MB)
+    gMAX_DATA_FILE_SIZE        = 0xFFFFFFFFFF             // 数据文件最大大小(40bit, 1TB)
+    gMETA_ITEM_SIZE            = 17                       // 元数据单项大小(byte)
+    gMAX_META_LIST_SIZE        = 65535*gMETA_ITEM_SIZE    // 阶数，元数据列表最大大小(byte)
+    gINDEX_BUCKET_SIZE         = 7                        // 索引文件数据块大小(byte)
+    gMETA_BUCKET_SIZE          = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    gDATA_BUCKET_SIZE          = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
+    gFILE_POOL_CACHE_TIMEOUT   = 60                       // 文件指针池缓存时间(秒)
+    gCACHE_DEFAULT_TIMEOUT     = 10000                    // gcache默认缓存时间(毫秒)
+    gBINLOG_AUTO_CLEAN_TIMEOUT = 500                      // binlog(毫秒)
+    gAUTO_COMPACTING_MINSIZE   = 512                      // 当空闲块大小>=该大小时，对其进行数据整理
+    gAUTO_COMPACTING_TIMEOUT   = 100                      // 自动进行数据整理的时间(毫秒)
+
     gDEFAULT_TABLE_NAME      = "default"                // 默认的数据表名
 )
 

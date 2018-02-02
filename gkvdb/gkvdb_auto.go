@@ -11,15 +11,15 @@ import (
 )
 
 // 数据文件自动整理
-func (table *Table) startAutoCompactingLoop() {
+func (table *Table) startAutoTruncatingLoop() {
     go func() {
         for !table.isClosed() {
-            if err := table.autoCompactingData(); err != nil {
-                glog.Error("data compacting error:", err)
+            if err := table.autoTruncatingData(); err != nil {
+                glog.Error("data truncating error:", err)
                 time.Sleep(time.Second)
             }
-            if err := table.autoCompactingMeta(); err != nil {
-                glog.Error("meta compacting error:", err)
+            if err := table.autoTruncatingMeta(); err != nil {
+                glog.Error("meta truncating error:", err)
                 time.Sleep(time.Second)
             }
             time.Sleep(gAUTO_COMPACTING_TIMEOUT*time.Millisecond)
@@ -31,7 +31,7 @@ func (table *Table) startAutoCompactingLoop() {
 func (db *DB) startAutoSyncingLoop() {
     go func() {
         for !db.isClosed() {
-            db.binlog.sync(0)
+            db.binlog.sync()
             time.Sleep(gBINLOG_AUTO_SYNCING*time.Millisecond)
         }
     }()
@@ -39,8 +39,8 @@ func (db *DB) startAutoSyncingLoop() {
 
 
 // 数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
-func (table *Table) autoCompactingData() error {
-    key := "auto_compacting_data_cache_key_for_" + table.db.path + table.name
+func (table *Table) autoTruncatingData() error {
+    key := "auto_truncating_data_cache_key_for_" + table.db.path + table.name
     if gcache.Get(key) != nil {
         return nil
     }
@@ -122,8 +122,8 @@ func (table *Table) autoCompactingData() error {
 }
 
 // 元数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
-func (table *Table) autoCompactingMeta() error {
-    key := "auto_compacting_meta_cache_key_for_" + table.db.path + table.name
+func (table *Table) autoTruncatingMeta() error {
+    key := "auto_truncating_meta_cache_key_for_" + table.db.path + table.name
     if gcache.Get(key) != nil {
         return nil
     }

@@ -114,7 +114,7 @@ func (db *DB) newTable(name string) (*Table, error) {
     }
     // 初始化相关服务
     table.initFileSpace()
-    table.startAutoCompactingLoop()
+    table.startAutoTruncatingLoop()
 
     // 保存数据表对象指针到全局数据库对象中
     table.db.tables.Set(name, table)
@@ -176,7 +176,7 @@ func (table *Table) set(key []byte, value []byte) error {
         return err
     }
 
-    // 值未改变不用重写
+    // 对比键值，键值未改变不用重写
     if record.value != nil && bytes.Compare(value, record.value) == 0 {
         return nil
     }
