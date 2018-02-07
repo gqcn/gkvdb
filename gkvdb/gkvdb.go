@@ -7,7 +7,7 @@
 // 元数据文件结构   :[键名哈希64(64bit) 键名长度(8bit) 键值长度(24bit,16MB) 数据文件偏移量(40bit,1TB)](变长)
 // 数据文件结构    ：[键名长度(8bit) 键名 键值](变长)
 // BinLog文件结构 ：注意binlog中的事务编号不是递增的，但是是唯一的
-// [是否同步(8bit) 数据长度(32bit) 事务编号(64bit)] -- 事务开始
+// [事务编号(64bit) 数据长度(32bit)] -- 事务开始
 // [表名长度(8bit) 键名长度(8bit) 键值长度(24bit,16MB) 表名 键名 键值 ](变长，当键值长度为0表示删除)
 // ...
 // [事务编号(64bit)] -- 事务结束
@@ -38,7 +38,7 @@ const (
     gDATA_BUCKET_SIZE          = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT   = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT     = 10000                    // gcache默认缓存时间(毫秒)
-    gBINLOG_AUTO_CLEAN_TIMEOUT = 500                      // binlog(毫秒)
+    gBINLOG_AUTO_CLEAN_TIMEOUT = 500                      // binlog自动清理间隔(毫秒)
     gAUTO_COMPACTING_MINSIZE   = 512                      // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT   = 100                      // 自动进行数据整理的时间(毫秒)
 

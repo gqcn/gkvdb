@@ -10,7 +10,6 @@ import (
     "gitee.com/johng/gf/g/os/glog"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gfilepool"
-    "gitee.com/johng/gf/g/container/glist"
     "gitee.com/johng/gf/g/encoding/gbinary"
     "gitee.com/johng/gf/g/container/gqueue"
     "gitee.com/johng/gf/g/os/grpool"
@@ -23,11 +22,12 @@ type BinLog struct {
     db     *DB             // 所属数据库
     fp     *gfilepool.Pool // 文件指针池
     queue  *gqueue.Queue   // 同步打包数据队列
-    length int32           // 队列数据项长度(注意queue中存放的是打包的数据项)
+    offset int64           // 已同步的文件内容偏移量
 }
 
 // binlog写入项
 type BinLogItem struct {
+    length  int                          // 数据长度(包括前后事务编号)
     datamap map[string]map[string][]byte // 事务数据
 }
 
@@ -35,7 +35,7 @@ type BinLogItem struct {
 func newBinLog(db *DB) (*BinLog, error) {
     binlog := &BinLog{
         db    : db,
-        queue : gqueue.New(),
+        queue : gqueue.New(gMAX_BINLOG_LENGTH),
     }
     path := db.getBinLogFilePath()
     if gfile.Exists(path) && (!gfile.IsWritable(path) || !gfile.IsReadable(path)){
@@ -73,16 +73,13 @@ func (binlog *BinLog) initFromFile() {
             if gbinary.DecodeToInt8(buffer[0 : 1]) == 0 {
                 datamap := binlog.binlogBufferToDataMap(blbuffer[i + 13 : i + 13 + blsize])
                 for n, m := range datamap {
-                    binlog.length += int32(len(m))
                     if table, err := binlog.db.Table(n); err == nil {
-                        if err := table.memt.set(m); err != nil {
-                            glog.Error(err)
-                        }
+                        table.memt.set(m)
                     } else {
                         glog.Error(err)
                     }
                 }
-                binlog.queue.PushBack(BinLogItem{datamap})
+                binlog.queue.PushBack(BinLogItem{12 + blsize, datamap})
             }
             i += 13 + blsize + 8
         }
@@ -109,26 +106,37 @@ func (binlog *BinLog) binlogBufferToDataMap(buffer []byte) map[string]map[string
     return datamap
 }
 
-// 是否达到binlog长度上限
-func (binlog *BinLog) reachLengthLimit() bool {
-    return atomic.LoadInt32(&binlog.length) >= gMAX_BINLOG_LENGTH
+func (binlog *BinLog) doClearBinlog() {
+    offset := atomic.LoadInt64(&binlog.offset)
+    if offset == 0 {
+        return
+    }
+    binlogPath := binlog.db.getBinLogFilePath()
+    // 将binlog文件锁起来，防止在文件大小矫正过程中内容发生改变
+    binlog.Lock()
+    defer binlog.Unlock()
+    // 必须要保证所有binlog已经同步完成才执行清空操作
+    if gfile.Size(binlogPath) > 0 && binlog.queue.Size() == 0 {
+        //fmt.Println("truncate:", gfile.Size(binlogPath), binlog.queue.Len())
+        // 清空数据库所有的表的缓存，由于该操作在binlog写锁内部执行，
+        // binlog写入完成之后才能写memtable，因此这里不存在memtable在清理的过程中写入数据的问题
+        binlog.db.tables.
+        for _, v := range *binlog.db.tables.Clone() {
+            v.(*Table).memt.clear()
+        }
+        os.Truncate(binlogPath, 0)
+        atomic.StoreInt32(&binlog.length, 0)
+    }
 }
 
 // 添加binlog到文件，支持批量添加
 // 返回写入的文件开始位置，以及是否有错误
 func (binlog *BinLog) writeByTx(tx *Transaction) error {
-    // 首先判断队列长度，执行强制同步
-    if binlog.reachLengthLimit() {
-        //fmt.Println("force binlog to sync, queue length:", atomic.LoadInt32(&binlog.length))
-        binlog.sync(1)
-    }
-    tx.id   = 255
     // 内容序列
     buffer := make([]byte, 0)
     // 事务开始
-    buffer  = append(buffer, gbinary.EncodeInt8(0)...)
-    buffer  = append(buffer, gbinary.EncodeInt32(0)...)
     buffer  = append(buffer, gbinary.EncodeInt64(tx.id)...)
+    buffer  = append(buffer, gbinary.EncodeInt32(0)...)
     // 数据列表
     blsize := 0
     length := int32(0)
@@ -177,81 +185,28 @@ func (binlog *BinLog) writeByTx(tx *Transaction) error {
     // 再写内存表(分别写入到对应表的memtable中)
     for n, m := range tx.tables {
         if table, err := tx.db.Table(n); err == nil {
-            if err := table.memt.set(m); err != nil {
-                os.Truncate(binlog.db.getBinLogFilePath(), start)
-                return err
-            }
+            table.memt.set(m)
         } else {
+            // 如果写入失败，那么执行binlog文件回滚，以下同(一般不会失败)
             os.Truncate(binlog.db.getBinLogFilePath(), start)
             return err
         }
     }
 
     // 添加到磁盘化队列
-    binlog.queue.PushBack(BinLogItem{tx.tables})
-
-    // 增加数据队列长度记录
-    atomic.AddInt32(&binlog.length, length)
+    binlog.queue.PushBack(BinLogItem{len(buffer), tx.tables})
     return nil
-}
-
-// 写入磁盘，标识事务已经同步，在对应位置只写入1个字节
-func (binlog *BinLog) markSynced(start int64) error {
-    blpf, err := binlog.fp.File()
-    if err != nil {
-        return err
-    }
-    defer blpf.Close()
-
-    binlog.Lock()
-    defer binlog.Unlock()
-
-    if _, err := blpf.File().WriteAt(gbinary.EncodeInt8(1), start); err != nil {
-        return err
-    }
-    return nil
-}
-
-// 执行binlog同步
-func (binlog *BinLog) sync() {
-    for {
-        //if v := binlog.queue.PopFront(); v != nil {
-        //
-        //} else {
-        //    // 如果所有的事务数据已经同步完成，那么矫正binblog文件大小
-        //    binlogPath := binlog.db.getBinLogFilePath()
-        //    // 将binlog文件锁起来，防止在文件大小矫正过程中内容发生改变
-        //    binlog.Lock()
-        //    defer binlog.Unlock()
-        //    // 必须要保证所有binlog已经同步完成才执行清空操作
-        //    if gfile.Size(binlogPath) > 0 && binlog.queue.Size() == 0 {
-        //        //fmt.Println("truncate:", gfile.Size(binlogPath), binlog.queue.Len())
-        //        // 清空数据库所有的表的缓存，由于该操作在binlog写锁内部执行，
-        //        // binlog写入完成之后才能写memtable，因此这里不存在memtable在清理的过程中写入数据的问题
-        //        for _, v := range *binlog.db.tables.Clone() {
-        //            v.(*Table).memt.clear()
-        //        }
-        //        os.Truncate(binlogPath, 0)
-        //        atomic.StoreInt32(&binlog.length, 0)
-        //    }
-        //    break
-        //}
-    }
 }
 
 // 同步binlog数据项
 func (binlog *BinLog) doSyncItem(item BinLogItem) {
-    binlog.smu.Lock()
-    defer binlog.smu.Unlock()
-    wg     := sync.WaitGroup{}
-    done   := int32(0)
-    length := int32(0)
+    wg   := sync.WaitGroup{}
+    done := int32(0)
     if item.datamap == nil {
         return
     }
     for n, m := range item.datamap {
         wg.Add(1)
-        length += int32(len(m))
         // 不同的数据表异步执行数据保存
         name := n
         data := m
@@ -264,11 +219,8 @@ func (binlog *BinLog) doSyncItem(item BinLogItem) {
                 glog.Error(err)
                 return
             }
-            // 执行保存操作
+            // 执行磁盘保存操作
             for k, v := range data {
-                if atomic.LoadInt32(&done) < 0 {
-                    return
-                }
                 if len(v) == 0 {
                     if err := table.remove([]byte(k)); err != nil {
                         atomic.StoreInt32(&done, -1)
@@ -291,7 +243,6 @@ func (binlog *BinLog) doSyncItem(item BinLogItem) {
         binlog.queue.PushFront(item)
         time.Sleep(time.Second)
     } else {
-        binlog.markSynced(item.txstart)
-        atomic.AddInt32(&binlog.length, -length)
+        atomic.AddInt64(&binlog.offset, int64(item.length))
     }
 }

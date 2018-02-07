@@ -8,6 +8,7 @@ import (
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
     "errors"
+    "github.com/syndtr/goleveldb/leveldb/table"
 )
 
 // 数据文件自动整理
@@ -27,16 +28,28 @@ func (table *Table) startAutoTruncatingLoop() {
     }()
 }
 
-// 开启自动同步线程
+// 开启自动同步线程 - 数据同步
 func (db *DB) startAutoSyncingLoop() {
     go func() {
-        for !db.isClosed() {
-            db.binlog.sync()
-            time.Sleep(gBINLOG_AUTO_SYNCING*time.Millisecond)
+        for {
+            if v := db.binlog.queue.PopFront(); v != nil {
+                db.binlog.doSyncItem(v.(BinLogItem))
+            } else {
+                break
+            }
         }
     }()
 }
 
+// 开启自动同步线程 - Binlog同步标识
+func (db *DB) startAutoMarkingLoop() {
+    go func() {
+        for !db.isClosed() {
+
+            time.Sleep(gBINLOG_AUTO_CLEAN_TIMEOUT * time.Millisecond)
+        }
+    }()
+}
 
 // 数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
 func (table *Table) autoTruncatingData() error {
