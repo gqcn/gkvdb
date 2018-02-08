@@ -274,22 +274,20 @@ func (binlog *BinLog) sync(from int) {
                 atomic.AddInt32(&binlog.length, -length)
             }
         } else {
-            // 如果所有的事务数据已经同步完成，那么矫正binblog文件大小
-            binlogPath := binlog.db.getBinLogFilePath()
-            // 将binlog文件锁起来，防止在文件大小矫正过程中内容发生改变
+            // 将binlog文件锁起来，
+            // 防止在文件大小矫正过程中内容发生改变
             binlog.Lock()
-            defer binlog.Unlock()
             // 必须要保证所有binlog已经同步完成才执行清空操作
-            if gfile.Size(binlogPath) > 0 && binlog.queue.Len() == 0 {
-                //fmt.Println("truncate:", gfile.Size(binlogPath), binlog.queue.Len())
+            if atomic.LoadInt32(&binlog.length) > 0 && binlog.queue.Len() == 0 {
                 // 清空数据库所有的表的缓存，由于该操作在binlog写锁内部执行，
                 // binlog写入完成之后才能写memtable，因此这里不存在memtable在清理的过程中写入数据的问题
-                for _, v := range *binlog.db.tables.Clone() {
+                binlog.db.tables.Iterator(func(k string, v interface{}){
                     v.(*Table).memt.clear()
-                }
-                os.Truncate(binlogPath, 0)
+                })
                 atomic.StoreInt32(&binlog.length, 0)
+                os.Truncate(binlog.db.getBinLogFilePath(), 0)
             }
+            binlog.Unlock()
             break
         }
     }
