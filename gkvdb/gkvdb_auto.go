@@ -30,9 +30,11 @@ func (table *Table) startAutoCompactingLoop() {
 // 开启自动同步线程
 func (db *DB) startAutoSyncingLoop() {
     go func() {
-        for !db.isClosed() {
-            db.binlog.sync(0)
-            time.Sleep(gBINLOG_AUTO_SYNCING*time.Millisecond)
+        select {
+            case <- db.binlog.syncEvents:
+                db.binlog.sync()
+            case <- db.binlog.closeEvents:
+                return
         }
     }()
 }

@@ -20,14 +20,13 @@ func (table *Table) newMemTable() *MemTable {
 }
 
 // 保存事务
-func (mtable *MemTable) set(datamap map[string][]byte) error {
+func (mtable *MemTable) set(datamap map[string][]byte) {
     mtable.mu.Lock()
     defer mtable.mu.Unlock()
 
     for k, v := range datamap {
         mtable.datamap[k] = v
     }
-    return nil
 }
 
 // 查询键值对
