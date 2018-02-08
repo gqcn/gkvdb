@@ -27,7 +27,6 @@ type BinLog struct {
     syncEvents      chan struct{}    // 数据同步通知事件
     closeEvents     chan struct{}    // 数据库关闭事件
     limitFreeEvents chan struct{}    // 数据长度上限阻塞释放通知事件
-
 }
 
 // binlog写入项
@@ -276,12 +275,7 @@ func (binlog *BinLog) sync() {
                 time.Sleep(time.Second)
             } else {
                 binlog.markSynced(item.txstart)
-                limited := binlog.reachLengthLimit()
                 atomic.AddInt32(&binlog.length, -length)
-                if limited && !binlog.reachLengthLimit() {
-                    close(binlog.limitFreeEvents)
-                    binlog.limitFreeEvents = make(chan struct{}, 0)
-                }
             }
         } else {
             // 将binlog文件锁起来，
@@ -298,6 +292,9 @@ func (binlog *BinLog) sync() {
                 os.Truncate(binlog.db.getBinLogFilePath(), 0)
             }
             binlog.Unlock()
+
+            close(binlog.limitFreeEvents)
+            binlog.limitFreeEvents = make(chan struct{}, 0)
             break
         }
     }

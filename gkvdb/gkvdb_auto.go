@@ -30,11 +30,13 @@ func (table *Table) startAutoCompactingLoop() {
 // 开启自动同步线程
 func (db *DB) startAutoSyncingLoop() {
     go func() {
-        select {
-            case <- db.binlog.syncEvents:
-                db.binlog.sync()
-            case <- db.binlog.closeEvents:
-                return
+        for {
+            select {
+                case <- db.binlog.syncEvents:
+                    db.binlog.sync()
+                case <- db.binlog.closeEvents:
+                    return
+            }
         }
     }()
 }
@@ -149,7 +151,14 @@ func (table *Table) autoCompactingMeta() error {
     mtsize  := gfile.Size(table.getMetaFilePath())
     mtstart := index + int64(maxsize)
     if mtstart == mtsize {
-        return os.Truncate(table.getMetaFilePath(), int64(index))
+        if err := os.Truncate(table.getMetaFilePath(), int64(index)); err == nil {
+            if index == 0 {
+                return os.Truncate(table.getIndexFilePath(), 0)
+            }
+            return nil
+        } else {
+            return err
+        }
     } else {
         if mtpf, retmsg := table.mtfp.File(); retmsg == nil {
             defer mtpf.Close()
