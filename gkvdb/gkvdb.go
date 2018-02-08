@@ -31,6 +31,7 @@ const (
     gMAX_VALUE_SIZE          = 0xFFFFFF                 // 键值最大长度(16MB)
     gMETA_ITEM_SIZE          = 17                       // 元数据单项大小(byte)
     gMAX_META_LIST_SIZE      = 65535*gMETA_ITEM_SIZE    // 阶数，元数据列表最大大小(byte)
+    gMAX_DATA_FILE_SIZE      = 0xFFFFFFFFFF             // 数据文件最大大小(40bit, 1TB)
     gINDEX_BUCKET_SIZE       = 7                        // 索引文件数据块大小(byte)
     gMETA_BUCKET_SIZE        = 5*gMETA_ITEM_SIZE        // 元数据数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)

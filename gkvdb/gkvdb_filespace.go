@@ -184,7 +184,7 @@ func (table *Table) getDbFileSpace(size int) int64 {
         defer pf.Close()
 
         start, err := pf.File().Seek(0, 2)
-        if err != nil {
+        if err != nil || (start + int64(size)) > gMAX_DATA_FILE_SIZE {
             return -1
         }
         return start

@@ -118,7 +118,6 @@ func (binlog *BinLog) writeByTx(tx *Transaction) error {
         //fmt.Println("force binlog to sync, queue length:", atomic.LoadInt32(&binlog.length))
         binlog.sync(1)
     }
-    tx.id   = 255
     // 内容序列
     buffer := make([]byte, 0)
     // 事务开始
