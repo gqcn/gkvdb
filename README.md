@@ -1,4 +1,4 @@
-Go语言开发的基于DRH(Deep-Re-Hash)深度哈希分区算法的高性能Key-Value嵌入式数据库。
+Go语言开发的基于DRH(Deep-Re-Hash)深度哈希分区算法的高性能Key-Value嵌入式事务数据库。
 
 ## 特点
 1. 基于纯Go语言实现，具有优异的跨平台性；

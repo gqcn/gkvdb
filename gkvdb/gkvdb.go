@@ -39,7 +39,7 @@ const (
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 512                      // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
-    gBINLOG_MAX_LENGTH       = 200000                   // binlog临时队列最大长度，超过该长度则强制性阻塞同步到数据文件
+    gBINLOG_MAX_SIZE         = 20*1024*1024             // binlog临时队列最大大小(byte)，超过该长度则强制性阻塞同步到数据文件
     gDEFAULT_TABLE_NAME      = "default"                // 默认的数据表名
 )
 

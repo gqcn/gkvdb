@@ -14,7 +14,7 @@ var db    *gkvdb.DB
 // 按照批次执行操作的数量
 var batch int = 10000
 // 并发数量
-var group int = 50
+var group int = 10
 
 // 数据库初始化
 func init() {
@@ -58,7 +58,7 @@ func TestSet(count int) {
     fmt.Println("TestSet:", gtime.Microsecond() - t)
 }
 
-// 测试数据库查询
+// 测试数据库查询，及结果匹配
 func TestGet(count int) {
     var wg sync.WaitGroup
     t  := gtime.Microsecond()
@@ -121,10 +121,10 @@ func TestRemove(count int) {
 
 
 func main() {
-    count := 10000000
+    count := 1000000
     TestSet(count)
     TestGet(count)
-    TestRemove(count)
+    //TestRemove(count)
 
     select {
 
