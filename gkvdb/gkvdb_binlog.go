@@ -2,6 +2,7 @@ package gkvdb
 
 import (
     "os"
+    "math"
     "sync"
     "time"
     "bytes"
@@ -9,11 +10,10 @@ import (
     "sync/atomic"
     "gitee.com/johng/gf/g/os/glog"
     "gitee.com/johng/gf/g/os/gfile"
+    "gitee.com/johng/gf/g/os/grpool"
     "gitee.com/johng/gf/g/os/gfilepool"
     "gitee.com/johng/gf/g/container/glist"
     "gitee.com/johng/gf/g/encoding/gbinary"
-    "math"
-    "gitee.com/johng/gf/g/os/grpool"
 )
 
 // binlog操作对象
@@ -23,7 +23,7 @@ type BinLog struct {
     db              *DB              // 所属数据库
     fp              *gfilepool.Pool  // 文件指针池
     queue           *glist.SafeList  // 同步打包数据队列
-    queuesize       int32            // 队列大小限制(byte)
+    queuesize       int32            // 队列大小限制(byte)，注意不是binlog文件大小，是未同步的队列数据大小
     syncEvents      chan struct{}    // 数据同步通知事件
     closeEvents     chan struct{}    // 数据库关闭事件
     limitFreeEvents chan struct{}    // 数据长度上限阻塞释放通知事件
@@ -74,8 +74,8 @@ func (binlog *BinLog) initFromFile() {
         if blsize < 0 ||
             i + 13 + blsize + 8 > len(blbuffer) ||
             bytes.Compare(blbuffer[i + 5 : i + 13], blbuffer[i + 13 + blsize : i + 13 + blsize + 8]) != 0 {
+            glog.Errorfln("binlog was corrupt, ignore index: %d\n", i)
             i++
-            continue
         } else {
             // 正常数据，判断并同步到memtable中
             if gbinary.DecodeToInt8(buffer[0 : 1]) == 0 {
@@ -252,13 +252,13 @@ func (binlog *BinLog) sync() {
                         if len(v) == 0 {
                             if err := table.remove([]byte(k)); err != nil {
                                 atomic.StoreInt32(&done, -1)
-                                //glog.Error(err)
+                                glog.Error(err)
                                 return
                             }
                         } else {
                             if err := table.set([]byte(k), v); err != nil {
                                 atomic.StoreInt32(&done, -1)
-                                //glog.Error(err)
+                                glog.Error(err)
                                 return
                             }
                         }
@@ -269,6 +269,7 @@ func (binlog *BinLog) sync() {
             // 同步失败，重新推入队列
             if done < 0 {
                 binlog.queue.PushBack(item)
+                glog.Error("data sync failed, retry later")
                 time.Sleep(time.Second)
             } else {
                 binlog.markSynced(item.txstart)
@@ -289,7 +290,6 @@ func (binlog *BinLog) sync() {
                 os.Truncate(binlog.db.getBinLogFilePath(), 0)
             }
             binlog.Unlock()
-
             close(binlog.limitFreeEvents)
             binlog.limitFreeEvents = make(chan struct{}, 0)
             break

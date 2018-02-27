@@ -153,7 +153,8 @@ func (table *Table) autoCompactingMeta() error {
     if mtstart == mtsize {
         if err := os.Truncate(table.getMetaFilePath(), int64(index)); err == nil {
             if index == 0 {
-                return os.Truncate(table.getIndexFilePath(), 0)
+                // 如果所有meta已被清空，那么重新初始化索引文件
+                gfile.PutBinContents(table.getIndexFilePath(), make([]byte, gINDEX_BUCKET_SIZE*gDEFAULT_PART_SIZE))
             }
             return nil
         } else {

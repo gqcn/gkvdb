@@ -296,6 +296,7 @@ func (table *Table) getIndexInfoByRecord(record *Record) error {
                 record.index.end    = record.index.start + gINDEX_BUCKET_SIZE
             }
         } else {
+            // index文件必定有值，即使数据不存在，那么也会有初始化的空值
             return errors.New("index not found")
         }
     }
