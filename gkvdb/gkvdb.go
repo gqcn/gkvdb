@@ -1,4 +1,8 @@
-// 基于DRH(Deep-Re-Hash)算法的高性能Key-Value嵌入式数据库
+// Copyright 2017 gkvdb Author(https://gitee.com/johng/gkvdb). All Rights Reserved.
+//
+// This Source Code Form is subject to the terms of the MIT License.
+// If a copy of the MIT was not distributed with this file,
+// You can obtain one at https://gitee.com/johng/gkvdb.
 
 // 数据结构要点   ：数据的分配长度cap >= 数据真实长度len，且 cap - len <= bucket，
 //               当数据存储内容发生改变时，依靠碎片管理器对碎片进行回收再利用，且碎片大小 >= bucket
@@ -12,6 +16,7 @@
 // ...
 // [事务编号(64bit)] -- 事务结束
 
+// 基于DRH(Deep-Re-Hash)算法的高性能Key-Value嵌入式数据库.
 package gkvdb
 
 import (

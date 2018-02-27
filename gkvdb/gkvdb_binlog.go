@@ -252,13 +252,13 @@ func (binlog *BinLog) sync() {
                         if len(v) == 0 {
                             if err := table.remove([]byte(k)); err != nil {
                                 atomic.StoreInt32(&done, -1)
-                                glog.Error(err)
+                                //glog.Error(err)
                                 return
                             }
                         } else {
                             if err := table.set([]byte(k), v); err != nil {
                                 atomic.StoreInt32(&done, -1)
-                                glog.Error(err)
+                                //glog.Error(err)
                                 return
                             }
                         }
