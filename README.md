@@ -1,3 +1,9 @@
+<div>
+    <a href="https://godoc.org/github.com/johng-cn/gkvdb/gkvdb" target="_blank">
+        <img src="https://godoc.org/github.com/johng-cn/gkvdb?status.svg"/>
+    </a>
+</div>
+
 Go语言开发的基于DRH(Deep-Re-Hash)深度哈希分区算法的高性能高可用Key-Value嵌入式事务数据库。
 
 ## 特点
