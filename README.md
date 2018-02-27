@@ -212,5 +212,16 @@ fmt.Println(t1.Items(-1))
 fmt.Println(t2.Items(-1))
 ```
 
+## 性能
+```shell
+john@workstation:~/gkvdb/gkvdb_test/benchmark_test$ go test *.go -bench=".*"
+goos: linux
+goarch: amd64
+BenchmarkSet-8      	  300000	      5130 ns/op
+BenchmarkGet-8      	 1000000	      9628 ns/op
+BenchmarkRemove-8   	  500000	      4053 ns/op
+PASS
+ok  	command-line-arguments	13.964s
+```
 
 
