@@ -22,7 +22,7 @@ type BinLog struct {
     smu             sync.RWMutex     // binlog同步互斥锁
     db              *DB              // 所属数据库
     fp              *gfilepool.Pool  // 文件指针池
-    queue           *glist.SafeList  // 同步打包数据队列
+    queue           *glist.List      // 同步打包数据队列
     queuesize       int32            // 队列大小限制(byte)，注意不是binlog文件大小，是未同步的队列数据大小
     syncEvents      chan struct{}    // 数据同步通知事件
     closeEvents     chan struct{}    // 数据库关闭事件
@@ -40,7 +40,7 @@ type BinLogItem struct {
 func newBinLog(db *DB) (*BinLog, error) {
     binlog := &BinLog{
         db              : db,
-        queue           : glist.NewSafeList(),
+        queue           : glist.New(),
         syncEvents      : make(chan struct{}, math.MaxUint32),
         closeEvents     : make(chan struct{}, 2),
         limitFreeEvents : make(chan struct{}, 0),
