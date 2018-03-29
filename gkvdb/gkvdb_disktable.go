@@ -5,12 +5,12 @@ import (
     "sync"
     "bytes"
     "errors"
-    "sync/atomic"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/os/gfilepool"
     "gitee.com/johng/gf/g/os/gfilespace"
     "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/container/gtype"
 )
 
 // 数据表
@@ -26,18 +26,19 @@ type Table struct {
     mtsp   *gfilespace.Space // 元数据文件碎片管理
     dbsp   *gfilespace.Space // 数据文件碎片管理器
     memt   *MemTable         // MemTable
-    closed int32             // 数据库是否关闭，以便异步线程进行判断处理
+    cache  *gcache.Cache     // 缓存管理对象
+    closed *gtype.Bool       // 数据库是否关闭，以便异步线程进行判断处理
 }
 
 // 索引项
-type Index struct {
+type _Index struct {
     start  int64   // 索引开始位置
     end    int64   // 索引结束位置
-    inc    int     // 分区，不同深度的分区增量会不同，准确的分区数需要和基本分区数进行累加
+    size   int     // 分区大小
 }
 
 // 元数据项
-type Meta struct {
+type _Meta struct {
     start  int64  // 开始位置
     end    int64  // 结束位置
     cap    int    // 列表分配长度(byte)
@@ -48,7 +49,7 @@ type Meta struct {
 }
 
 // 数据项
-type Data struct {
+type _Data struct {
     start  int64  // 数据文件中的开始地址
     end    int64  // 数据文件中的结束地址
     cap    int    // 数据允许存放的的最大长度（用以修改对比）
@@ -58,13 +59,13 @@ type Data struct {
 }
 
 // KV数据检索记录
-type Record struct {
+type _Record struct {
     hash64    uint    // 64位的hash code
     key       []byte  // 键名
     value     []byte  // 键值
-    index     Index
-    meta      Meta
-    data      Data
+    index     _Index
+    meta      _Meta
+    data      _Data
 }
 
 // 获取数据表对象，如果表名已存在，那么返回已存在的表对象
@@ -84,8 +85,9 @@ func (db *DB) Table(name string) (*Table, error) {
 func (db *DB) newTable(name string) (*Table, error) {
     // 初始化数据表信息
     table := &Table{
-        db   : db,
-        name : name,
+        db     : db,
+        name   : name,
+        closed : gtype.NewBool(),
     }
     table.memt = table.newMemTable()
 
@@ -108,22 +110,20 @@ func (db *DB) newTable(name string) (*Table, error) {
     table.mtfp = gfilepool.New(mtpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
     table.dbfp = gfilepool.New(dbpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
 
+    // 数据表缓存对象
+    table.cache = gcache.New()
+
     // 初始化索引文件内容
     if gfile.Size(ixpath) == 0 {
         gfile.PutBinContents(ixpath, make([]byte, gINDEX_BUCKET_SIZE*gDEFAULT_PART_SIZE))
     }
     // 初始化相关服务
     table.initFileSpace()
-    table.startAutoCompactingLoop()
+    go table.startAutoCompactingLoop()
 
     // 保存数据表对象指针到全局数据库对象中
     table.db.tables.Set(name, table)
     return table, nil
-}
-
-// 判断数据库是否已关闭
-func (table *Table) isClosed() bool {
-    return atomic.LoadInt32(&table.closed) > 0
 }
 
 // 关闭数据库链接，释放资源
@@ -131,7 +131,7 @@ func (table *Table) Close() {
     table.ixfp.Close()
     table.mtfp.Close()
     table.dbfp.Close()
-    atomic.StoreInt32(&table.closed, 1)
+    table.closed.Set(true)
 }
 
 // 索引文件
@@ -152,20 +152,20 @@ func (table *Table) getDataFilePath() string {
 // 磁盘查询
 func (table *Table) get(key []byte) []byte {
     ckey := "value_cache_" + string(key)
-    if v := gcache.Get(ckey); v != nil {
+    if v := table.cache.Get(ckey); v != nil {
         return v.([]byte)
     }
     table.mu.RLock()
     defer table.mu.RUnlock()
 
     value, _ := table.getValueByKey(key)
-    gcache.Set(ckey, value, gCACHE_DEFAULT_TIMEOUT)
+    table.cache.Set(ckey, value, gCACHE_DEFAULT_TIMEOUT)
     return value
 }
 
 // 磁盘保存
 func (table *Table) set(key []byte, value []byte) error {
-    defer gcache.Remove("value_cache_" + string(key))
+    defer table.cache.Remove("value_cache_" + string(key))
 
     table.mu.Lock()
     defer table.mu.Unlock()
@@ -192,7 +192,7 @@ func (table *Table) set(key []byte, value []byte) error {
 
 // 磁盘删除
 func (table *Table) remove(key []byte) error {
-    defer gcache.Remove("value_cache_" + string(key))
+    defer table.cache.Remove("value_cache_" + string(key))
 
     table.mu.Lock()
     defer table.mu.Unlock()
@@ -269,7 +269,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
 }
 
 // 获得索引信息，这里涉及到重复分区时索引的深度查找
-func (table *Table) getIndexInfoByRecord(record *Record) error {
+func (table *Table) getIndexInfoByRecord(record *_Record) error {
     pf, err := table.ixfp.File()
     if err != nil {
         return err
@@ -290,8 +290,8 @@ func (table *Table) getIndexInfoByRecord(record *Record) error {
                 record.meta.end   = record.meta.start + int64(record.meta.size)
                 break
             } else {
-                partition          := gDEFAULT_PART_SIZE + record.index.inc
-                record.index.inc    = int(gbinary.DecodeBits(bits[36 : 55]))
+                partition          := record.index.size
+                record.index.size   = int(gbinary.DecodeBits(bits[36 : 55]))
                 record.index.start  = start*gINDEX_BUCKET_SIZE + int64(record.hash64%uint(partition))*gINDEX_BUCKET_SIZE
                 record.index.end    = record.index.start + gINDEX_BUCKET_SIZE
             }
@@ -304,7 +304,7 @@ func (table *Table) getIndexInfoByRecord(record *Record) error {
 }
 
 // 获得元数据信息，对比hash64和关键字长度
-func (table *Table) getDataInfoByRecord(record *Record) error {
+func (table *Table) getDataInfoByRecord(record *_Record) error {
     pf, err := table.mtfp.File()
     if err != nil {
         return err
@@ -378,8 +378,8 @@ func (table *Table) getDataInfoByRecord(record *Record) error {
 }
 
 // 查询检索信息
-func (table *Table) getRecordByKey(key []byte) (*Record, error) {
-    record := &Record {
+func (table *Table) getRecordByKey(key []byte) (*_Record, error) {
+    record := &_Record {
         hash64  : uint(getHash64(key)),
         key     : key,
     }
@@ -431,7 +431,7 @@ func (table *Table) getValueByKey(key []byte) ([]byte, error) {
 
 // 根据索引信息删除指定数据
 // 只需要更新元数据信息即可(为保证高可用这里依旧采用新增数据方式进行更新)，旧有数据回收进碎片管理器
-func (table *Table) removeDataByRecord(record *Record) error {
+func (table *Table) removeDataByRecord(record *_Record) error {
     // 保存查询记录对象，以便处理碎片
     orecord := *record
     // 优先从元数据中剔除掉，成功之后数据便不完整，即使后续操作失败，该数据也会被识别为碎片
@@ -449,7 +449,7 @@ func (table *Table) removeDataByRecord(record *Record) error {
 }
 
 // 从元数据中删除指定数据
-func (table *Table) removeDataFromMt(record *Record) error {
+func (table *Table) removeDataFromMt(record *_Record) error {
     record.value       = nil
     record.meta.buffer = table.removeMeta(record.meta.buffer, record.meta.index)
     record.meta.size   = len(record.meta.buffer)
@@ -457,12 +457,12 @@ func (table *Table) removeDataFromMt(record *Record) error {
 }
 
 // 从索引中删除指定数据
-func (table *Table) removeDataFromIx(record *Record) error {
+func (table *Table) removeDataFromIx(record *_Record) error {
     return table.saveIndexByRecord(record)
 }
 
 // 写入一条KV数据
-func (table *Table) insertDataByRecord(record *Record) error {
+func (table *Table) insertDataByRecord(record *_Record) error {
     record.data.klen = len(record.key)
     record.data.vlen = len(record.value)
     record.data.size = record.data.klen + record.data.vlen + 1
@@ -522,8 +522,7 @@ func (table *Table) removeMeta(slice []byte, index int) []byte {
 }
 
 // 将数据写入到数据文件中，并更新信息到record
-// 写入
-func (table *Table) saveDataByRecord(record *Record) error {
+func (table *Table) saveDataByRecord(record *_Record) error {
     pf, err := table.dbfp.File()
     if err != nil {
         return err
@@ -551,7 +550,7 @@ func (table *Table) saveDataByRecord(record *Record) error {
 
 // 将数据写入到元数据文件中，并更新信息到record
 // 写入|删除
-func (table *Table) saveMetaByRecord(record *Record) error {
+func (table *Table) saveMetaByRecord(record *_Record) error {
     pf, err := table.mtfp.File()
     if err != nil {
         return err
@@ -592,7 +591,7 @@ func (table *Table) saveMetaByRecord(record *Record) error {
 }
 
 // 根据record更新索引信息
-func (table *Table) saveIndexByRecord(record *Record) error {
+func (table *Table) saveIndexByRecord(record *_Record) error {
     ixpf, err := table.ixfp.File()
     if err != nil {
         return err
@@ -619,16 +618,12 @@ func (table *Table) saveIndexByRecord(record *Record) error {
 }
 
 // 对数据库对应元数据列表进行重复分区
-func (table *Table) checkDeepRehash(record *Record) error {
+func (table *Table) checkDeepRehash(record *_Record) error {
     if record.meta.size < gMAX_META_LIST_SIZE {
         return nil
     }
-    // 计算分区增量，保证数据散列(分区后在同一请求处理中不再进行二次分区)
-    // 分区增量必须为奇数，保证分区数据分配均匀
-    inc := gDEFAULT_PART_SIZE + record.index.inc + 1
-    if inc%2 == 0 {
-        inc++
-    }
+    // 计算新创建的子哈希表的分区数，保证数据散列(分区后在同一请求处理中不再进行二次分区)
+    size := record.index.size + 1
     pmap := make(map[int][]byte)
     done := true
     for {
@@ -636,7 +631,7 @@ func (table *Table) checkDeepRehash(record *Record) error {
             buffer := record.meta.buffer[i : i + gMETA_ITEM_SIZE]
             bits   := gbinary.DecodeBytesToBits(buffer)
             hash64 := gbinary.DecodeBitsToUint(bits[0 : 64])
-            part   := int(hash64%uint(inc))
+            part   := int(hash64%uint(size))
             if _, ok := pmap[part]; !ok {
                 pmap[part] = make([]byte, 0)
             }
@@ -644,10 +639,7 @@ func (table *Table) checkDeepRehash(record *Record) error {
             if len(pmap[part]) == gMAX_META_LIST_SIZE {
                 done = false
                 pmap = make(map[int][]byte)
-                inc++
-                if inc%2 != 0 {
-                    inc++
-                }
+                size++
                 break
             }
         }
@@ -668,7 +660,7 @@ func (table *Table) checkDeepRehash(record *Record) error {
     tmpstart := mtstart
     mtbuffer := make([]byte, 0)
     ixbuffer := make([]byte, 0)
-    for i := 0; i < inc; i ++ {
+    for i := 0; i < size; i++ {
         part := i
         if v, ok := pmap[part]; ok {
             bits     := make([]gbinary.Bit, 0)
@@ -712,7 +704,7 @@ func (table *Table) checkDeepRehash(record *Record) error {
     // 修改老的索引信息
     bits := make([]gbinary.Bit, 0)
     bits  = gbinary.EncodeBits(bits, int(ixstart)/gINDEX_BUCKET_SIZE,  36)
-    bits  = gbinary.EncodeBits(bits, inc - gDEFAULT_PART_SIZE,         19)
+    bits  = gbinary.EncodeBits(bits, size,                             19)
     bits  = gbinary.EncodeBits(bits, 1,                                 1)
     if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
         return err

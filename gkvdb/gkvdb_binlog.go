@@ -127,7 +127,8 @@ func (binlog *BinLog) reachLengthLimit() bool {
 
 // 添加binlog到文件，支持批量添加
 // 返回写入的文件开始位置，以及是否有错误
-func (binlog *BinLog) writeByTx(tx *Transaction) error {
+// 第二个参数表示是否强制写入到磁盘
+func (binlog *BinLog) writeByTx(tx *Transaction, sync...bool) error {
     if binlog.reachLengthLimit() {
         <- binlog.limitFreeEvents
     }
@@ -178,6 +179,12 @@ func (binlog *BinLog) writeByTx(tx *Transaction) error {
     // 执行数据写入
     if _, err := blpf.File().WriteAt(buffer, start); err != nil {
         return err
+    }
+    // 是否执行文件sync
+    if len(sync) > 0 && sync[0] {
+        if err := blpf.File().Sync(); err != nil {
+            return err
+        }
     }
 
     // 再写内存表(分别写入到对应表的memtable中)

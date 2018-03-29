@@ -12,8 +12,8 @@ import (
 
 // 数据文件自动整理
 func (table *Table) startAutoCompactingLoop() {
-    go func() {
-        for !table.isClosed() {
+    func() {
+        for !table.closed.Val() {
             if err := table.autoCompactingData(); err != nil {
                 glog.Error("data compacting error:", err)
                 time.Sleep(time.Second)
@@ -29,7 +29,7 @@ func (table *Table) startAutoCompactingLoop() {
 
 // 开启自动同步线程
 func (db *DB) startAutoSyncingLoop() {
-    go func() {
+    func() {
         for {
             select {
                 case <- db.binlog.syncEvents:
@@ -45,11 +45,10 @@ func (db *DB) startAutoSyncingLoop() {
 // 数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
 func (table *Table) autoCompactingData() error {
     key := "auto_compacting_data_cache_key_for_" + table.db.path + table.name
-    if gcache.Get(key) != nil {
+    if !gcache.Lock(key, 10000) {
         return nil
     }
-    gcache.Set(key, struct{}{}, 86400)
-    defer gcache.Remove(key)
+    defer gcache.Unlock(key)
 
     table.mu.Lock()
     defer table.mu.Unlock()
@@ -78,7 +77,7 @@ func (table *Table) autoCompactingData() error {
             if buffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbstart + 1); buffer != nil {
                 klen   := gbinary.DecodeToUint8(buffer)
                 key    := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart + 1, dbstart + 1 + int64(klen))
-                record := &Record {
+                record := &_Record {
                     hash64  : uint(getHash64(key)),
                     key     : key,
                 }
@@ -128,11 +127,10 @@ func (table *Table) autoCompactingData() error {
 // 元数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
 func (table *Table) autoCompactingMeta() error {
     key := "auto_compacting_meta_cache_key_for_" + table.db.path + table.name
-    if gcache.Get(key) != nil {
+    if !gcache.Lock(key, 10000) {
         return nil
     }
-    gcache.Set(key, struct{}{}, 86400)
-    defer gcache.Remove(key)
+    defer gcache.Unlock(key)
 
     table.mu.Lock()
     defer table.mu.Unlock()
@@ -167,7 +165,7 @@ func (table *Table) autoCompactingMeta() error {
             if buffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtstart, mtstart + gMETA_ITEM_SIZE); buffer != nil {
                 bits   := gbinary.DecodeBytesToBits(buffer)
                 hash64 := gbinary.DecodeBitsToUint(bits[0 : 64])
-                record := &Record {
+                record := &_Record {
                     hash64  : hash64,
                 }
                 // 查找对应的索引信息，并执行更新

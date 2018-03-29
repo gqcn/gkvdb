@@ -21,12 +21,12 @@ package gkvdb
 
 import (
     "sync"
-    "sync/atomic"
     "strconv"
     "errors"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/encoding/ghash"
     "gitee.com/johng/gf/g/container/gmap"
+    "gitee.com/johng/gf/g/container/gtype"
 )
 
 const (
@@ -54,7 +54,7 @@ type DB struct {
     path   string                   // 数据文件存放目录路径
     tables *gmap.StringInterfaceMap // 多表集合
     binlog *BinLog                  // BinLog
-    closed int32                    // 数据库是否关闭，以便异步线程进行判断处理
+    closed *gtype.Bool              // 数据库是否关闭，以便异步线程进行判断处理
 }
 
 // 创建一个KV数据库，path指定数据库文件的存放目录绝对路径
@@ -76,7 +76,7 @@ func New(path string) (*DB, error) {
 
     // 自检并初始化相关服务
     db.binlog.initFromFile()
-    db.startAutoSyncingLoop()
+    go db.startAutoSyncingLoop()
     return db, nil
 }
 
@@ -97,12 +97,7 @@ func (db *DB) Close() {
     // 关闭binlog
     db.binlog.close()
     // 设置关闭标识，使得异步线程自动关闭
-    atomic.StoreInt32(&db.closed, 1)
-}
-
-// 判断数据库是否已关闭
-func (db *DB) isClosed() bool {
-    return atomic.LoadInt32(&db.closed) > 0
+    db.closed.Set(true)
 }
 
 // 计算关键字的hash code，使用64位哈希函数

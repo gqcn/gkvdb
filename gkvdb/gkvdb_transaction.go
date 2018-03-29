@@ -88,7 +88,7 @@ func (tx *Transaction) RemoveFrom(key []byte, name string) error {
 }
 
 // 提交数据
-func (tx *Transaction) Commit() error {
+func (tx *Transaction) Commit(sync...bool) error {
     tx.mu.Lock()
     defer tx.mu.Unlock()
 
@@ -96,7 +96,7 @@ func (tx *Transaction) Commit() error {
         return nil
     }
     // 写Binlog
-    if err := tx.db.binlog.writeByTx(tx); err != nil {
+    if err := tx.db.binlog.writeByTx(tx, sync...); err != nil {
         glog.Error(err)
         return err
     }
@@ -109,9 +109,9 @@ func (tx *Transaction) Commit() error {
 // 回滚数据
 func (tx *Transaction) Rollback() {
     tx.mu.Lock()
-    defer tx.mu.Unlock()
     // 重置事务
     tx.reset()
+    tx.mu.Unlock()
 }
 
 // 重置事务(内部调用)

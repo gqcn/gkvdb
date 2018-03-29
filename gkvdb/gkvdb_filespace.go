@@ -134,11 +134,12 @@ func (table *Table) getDbFileSpaceMaxSize() int {
     return table.dbsp.GetMaxSize()
 }
 
-// 元数据碎片
+// 添加元数据碎片
 func (table *Table) addMtFileSpace(index int, size int) {
     table.mtsp.AddBlock(index, size)
 }
 
+// 申请元数据存储空间
 func (table *Table) getMtFileSpace(size int) int64 {
     i, s := table.mtsp.GetBlock(size)
     if i >= 0 {
@@ -163,11 +164,12 @@ func (table *Table) getMtFileSpace(size int) int64 {
     return -1
 }
 
-// 数据碎片
+// 添加数据碎片
 func (table *Table) addDbFileSpace(index int, size int) {
     table.dbsp.AddBlock(index, size)
 }
 
+// 申请数据存储空间
 func (table *Table) getDbFileSpace(size int) int64 {
     i, s := table.dbsp.GetBlock(size)
     if i >= 0 {

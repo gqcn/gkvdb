@@ -124,9 +124,9 @@ func main() {
     count := 1000000
     TestSet(count)
     TestGet(count)
-    //TestRemove(count)
+    TestRemove(count)
 
-    select {
-
-    }
+    //select {
+    //
+    //}
 }
