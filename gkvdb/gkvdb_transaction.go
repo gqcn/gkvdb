@@ -11,12 +11,17 @@ type Transaction struct {
     mu     sync.RWMutex                 // 并发互斥锁
     db     *DB                          // 所属数据库
     id     int64                        // 事务编号
+    table  string                       // 事务默认表
     tables map[string]map[string][]byte // 事务数据项，键名为表名，键值为对应表的键值对数据
 }
 
 // 创建一个事务
-func (db *DB) Begin() *Transaction {
-    return db.newTransaction()
+func (db *DB) Begin(table...string) *Transaction {
+    tx := db.newTransaction()
+    if len(table) > 0 {
+        tx.table = table[0]
+    }
+    return tx
 }
 
 // 创建一个事务对象
@@ -36,7 +41,7 @@ func (db *DB) txid() int64 {
 
 // 添加数据
 func (tx *Transaction) Set(key, value []byte) error{
-    return tx.SetTo(key, value, gDEFAULT_TABLE_NAME)
+    return tx.SetTo(key, value, tx.table)
 }
 
 // 添加数据(针对数据表)
