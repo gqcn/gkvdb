@@ -6,7 +6,7 @@
 
 Go语言开发的基于[DRH(Deep-Re-Hash)深度哈希分区算法](http://johng.cn/brief-to-deep-re-hash-algorithm/)的高性能高可用Key-Value嵌入式事务数据库。
 gkvdb是开源的，免费的，基于MIT协议进行分发，开源项目地址(gitee与github仓库保持实时同步)：
-**Gitee**( https://gitee.com/johng/gkvdb )，**Github**( https://github.com/johng-cn/gkvdb )
+**Gitee**( https://gitee.com/johng/gkvdb )，**Github**( https://github.com/johng-cn/gkvdb )。
 
 ## 特点
 1. 基于纯Go语言实现，具有优异的跨平台性；
@@ -26,6 +26,10 @@ gkvdb是开源的，免费的，基于MIT协议进行分发，开源项目地址
 1. (默认)单表数据 1TB；
 1. 支持随机遍历，不支持范围遍历；
 1. 嵌入式数据库，没有内置C/S架构；
+
+
+## 文档
+1. [gkvdb的介绍及设计](http://johng.cn/gkvdb-brief/)
 
 
 ## 安装
