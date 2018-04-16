@@ -290,8 +290,9 @@ func (binlog *BinLog) sync() {
             if atomic.LoadInt32(&binlog.queuesize) <= 0 && binlog.queue.Len() == 0 {
                 // 清空数据库所有的表的缓存，由于该操作在binlog写锁内部执行，
                 // binlog写入完成之后才能写memtable，因此这里不存在memtable在清理的过程中写入数据的问题
-                binlog.db.tables.Iterator(func(k string, v interface{}){
+                binlog.db.tables.Iterator(func(k string, v interface{}) bool{
                     v.(*Table).memt.clear()
+                    return true
                 })
                 atomic.StoreInt32(&binlog.queuesize, 0)
                 os.Truncate(binlog.db.getBinLogFilePath(), 0)
