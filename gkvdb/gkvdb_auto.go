@@ -3,11 +3,11 @@ package gkvdb
 import (
     "os"
     "time"
+    "errors"
     "gitee.com/johng/gf/g/os/glog"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
-    "errors"
 )
 
 // 数据文件自动整理

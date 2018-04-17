@@ -8,9 +8,9 @@ import (
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/os/gfilepool"
-    "gitee.com/johng/gf/g/os/gfilespace"
     "gitee.com/johng/gf/g/encoding/gbinary"
     "gitee.com/johng/gf/g/container/gtype"
+    "gitee.com/johng/gkvdb/gkvdb/gfilespace"
 )
 
 // 数据表
