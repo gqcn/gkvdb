@@ -106,9 +106,9 @@ func (db *DB) newTable(name string) (*Table, error) {
     }
 
     // 创建文件指针池
-    table.ixfp = gfilepool.New(ixpath, os.O_RDWR|os.O_CREATE, 755, gFILE_POOL_CACHE_TIMEOUT)
-    table.mtfp = gfilepool.New(mtpath, os.O_RDWR|os.O_CREATE, 755, gFILE_POOL_CACHE_TIMEOUT)
-    table.dbfp = gfilepool.New(dbpath, os.O_RDWR|os.O_CREATE, 755, gFILE_POOL_CACHE_TIMEOUT)
+    table.ixfp = gfilepool.New(ixpath, os.O_RDWR|os.O_CREATE, 0755, gFILE_POOL_CACHE_TIMEOUT)
+    table.mtfp = gfilepool.New(mtpath, os.O_RDWR|os.O_CREATE, 0755, gFILE_POOL_CACHE_TIMEOUT)
+    table.dbfp = gfilepool.New(dbpath, os.O_RDWR|os.O_CREATE, 0755, gFILE_POOL_CACHE_TIMEOUT)
 
     // 数据表缓存对象
     table.cache = gcache.New()

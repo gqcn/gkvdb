@@ -22,7 +22,7 @@ func example() {
     }
 
     // 查询数据
-    fmt.Println("set    get1:", db.Get(key))
+    fmt.Println("set    get1:", string(db.Get(key)))
 
     // 删除数据
     if err := db.Remove(key); err != nil {
@@ -30,26 +30,26 @@ func example() {
     }
 
     // 再次查询数据
-    fmt.Println("remove get2:", db.Get(key))
+    fmt.Println("remove get2:", string(db.Get(key)))
 
     // 事务操作1
     tx    := db.Begin()
     tx.Set(key, value)
-    fmt.Println("tx set      get1:", tx.Get(key))
+    fmt.Println("tx set      get1:", string(tx.Get(key)))
     tx.Remove(key)
-    fmt.Println("tx remove   get2:", tx.Get(key))
+    fmt.Println("tx remove   get2:", string(tx.Get(key)))
     tx.Commit()
 
     // 事务操作2
     tx     = db.Begin()
     tx.Set(key, value)
-    fmt.Println("tx set      get3:", tx.Get(key))
+    fmt.Println("tx set      get3:", string(tx.Get(key)))
     tx.Commit()
 
     tx.Remove(key)
-    fmt.Println("tx remove   get4:", tx.Get(key))
+    fmt.Println("tx remove   get4:", string(tx.Get(key)))
     tx.Rollback()
-    fmt.Println("tx rollback get5:", tx.Get(key))
+    fmt.Println("tx rollback get5:", string(tx.Get(key)))
 
 
     // 批量操作，使用事务实现
@@ -179,5 +179,5 @@ func items() {
 }
 
 func main()  {
-    tabletx()
+    items()
 }

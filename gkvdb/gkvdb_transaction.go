@@ -20,6 +20,8 @@ func (db *DB) Begin(table...string) *Transaction {
     tx := db.newTransaction()
     if len(table) > 0 {
         tx.table = table[0]
+    } else {
+        tx.table = gDEFAULT_TABLE_NAME
     }
     return tx
 }

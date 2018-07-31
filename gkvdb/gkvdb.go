@@ -62,6 +62,7 @@ func New(path string) (*DB, error) {
     db := &DB {
         path   : path,
         tables : gmap.NewStringInterfaceMap(),
+        closed : gtype.NewBool(),
     }
     // 初始化数据库目录
     if !gfile.Exists(path) {
