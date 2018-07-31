@@ -49,7 +49,7 @@ func newBinLog(db *DB) (*BinLog, error) {
     if gfile.Exists(path) && (!gfile.IsWritable(path) || !gfile.IsReadable(path)){
         return nil, errors.New("permission denied to binlog file: " + path)
     }
-    binlog.fp = gfilepool.New(path, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT, gDEFAULT_FILEPOOL_EXPIRE)
+    binlog.fp = gfilepool.New(path, os.O_RDWR|os.O_CREATE, 755, gFILE_POOL_CACHE_TIMEOUT)
     return binlog, nil
 }
 
