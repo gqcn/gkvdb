@@ -49,7 +49,7 @@ func newBinLog(db *DB) (*BinLog, error) {
     if gfile.Exists(path) && (!gfile.IsWritable(path) || !gfile.IsReadable(path)){
         return nil, errors.New("permission denied to binlog file: " + path)
     }
-    binlog.fp = gfilepool.New(path, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
+    binlog.fp = gfilepool.New(path, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT, gDEFAULT_FILEPOOL_EXPIRE)
     return binlog, nil
 }
 
@@ -171,18 +171,18 @@ func (binlog *BinLog) writeByTx(tx *Transaction, sync...bool) error {
     defer binlog.Unlock()
 
     // 写到文件末尾
-    start, err := blpf.File().Seek(0, 2)
+    start, err := blpf.Seek(0, 2)
     if err != nil {
         return err
     }
 
     // 执行数据写入
-    if _, err := blpf.File().WriteAt(buffer, start); err != nil {
+    if _, err := blpf.WriteAt(buffer, start); err != nil {
         return err
     }
     // 是否执行文件sync
     if len(sync) > 0 && sync[0] {
-        if err := blpf.File().Sync(); err != nil {
+        if err := blpf.Sync(); err != nil {
             return err
         }
     }
@@ -218,7 +218,7 @@ func (binlog *BinLog) markSynced(start int64) error {
     binlog.Lock()
     defer binlog.Unlock()
 
-    if _, err := blpf.File().WriteAt(gbinary.EncodeInt8(1), start); err != nil {
+    if _, err := blpf.WriteAt(gbinary.EncodeInt8(1), start); err != nil {
         return err
     }
     return nil

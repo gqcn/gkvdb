@@ -42,6 +42,7 @@ const (
     gDATA_BUCKET_SIZE        = 32                       // 数据分块大小(byte, 值越大，数据增长时占用的空间越大)
     gFILE_POOL_CACHE_TIMEOUT = 60                       // 文件指针池缓存时间(秒)
     gCACHE_DEFAULT_TIMEOUT   = 10000                    // gcache默认缓存时间(毫秒)
+    gDEFAULT_FILEPOOL_EXPIRE = 60000                    // 文件指针池默认指针过期时间(毫秒)
     gAUTO_COMPACTING_MINSIZE = 512                      // 当空闲块大小>=该大小时，对其进行数据整理
     gAUTO_COMPACTING_TIMEOUT = 100                      // 自动进行数据整理的时间(毫秒)
     gBINLOG_MAX_SIZE         = 20*1024*1024             // binlog临时队列最大大小(byte)，超过该长度则强制性阻塞同步到数据文件

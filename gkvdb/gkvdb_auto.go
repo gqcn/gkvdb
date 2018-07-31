@@ -74,9 +74,9 @@ func (table *Table) autoCompactingData() error {
         if dbpf, retmsg := table.dbfp.File(); retmsg == nil {
             defer dbpf.Close()
             // 为防止截止位置超出文件长度，这里先获取键名长度
-            if buffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbstart + 1); buffer != nil {
+            if buffer := gfile.GetBinContentByTwoOffsets(dbpf.File, dbstart, dbstart + 1); buffer != nil {
                 klen   := gbinary.DecodeToUint8(buffer)
-                key    := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart + 1, dbstart + 1 + int64(klen))
+                key    := gfile.GetBinContentByTwoOffsets(dbpf.File, dbstart + 1, dbstart + 1 + int64(klen))
                 record := &_Record {
                     hash64  : uint(getHash64(key)),
                     key     : key,
@@ -85,10 +85,10 @@ func (table *Table) autoCompactingData() error {
                 if retmsg = table.getIndexInfoByRecord(record); retmsg == nil {
                     if record.meta.end > 0 {
                         if retmsg = table.getDataInfoByRecord(record); retmsg == nil {
-                            if dbbuffer := gfile.GetBinContentByTwoOffsets(dbpf.File(), record.data.start, record.data.end); dbbuffer != nil {
+                            if dbbuffer := gfile.GetBinContentByTwoOffsets(dbpf.File, record.data.start, record.data.end); dbbuffer != nil {
                                 record.data.start -= int64(maxsize)
                                 record.data.end   -= int64(maxsize)
-                                if _, retmsg = dbpf.File().WriteAt(dbbuffer, record.data.start); retmsg == nil {
+                                if _, retmsg = dbpf.WriteAt(dbbuffer, record.data.start); retmsg == nil {
                                     // 保存查询记录对象，以便处理碎片
                                     orecord := *record
                                     // 更新已迁移的元数据信息
@@ -162,7 +162,7 @@ func (table *Table) autoCompactingMeta() error {
         if mtpf, retmsg := table.mtfp.File(); retmsg == nil {
             defer mtpf.Close()
             // 找到对应空闲块下一条meta item数据
-            if buffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtstart, mtstart + gMETA_ITEM_SIZE); buffer != nil {
+            if buffer := gfile.GetBinContentByTwoOffsets(mtpf.File, mtstart, mtstart + gMETA_ITEM_SIZE); buffer != nil {
                 bits   := gbinary.DecodeBytesToBits(buffer)
                 hash64 := gbinary.DecodeBitsToUint(bits[0 : 64])
                 record := &_Record {
@@ -170,10 +170,10 @@ func (table *Table) autoCompactingMeta() error {
                 }
                 // 查找对应的索引信息，并执行更新
                 if retmsg = table.getIndexInfoByRecord(record); retmsg == nil {
-                    if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), record.meta.start, record.meta.end); mtbuffer != nil {
+                    if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File, record.meta.start, record.meta.end); mtbuffer != nil {
                         record.meta.start -= int64(maxsize)
                         record.meta.end   -= int64(maxsize)
-                        if _, retmsg = mtpf.File().WriteAt(mtbuffer, record.meta.start); retmsg == nil {
+                        if _, retmsg = mtpf.WriteAt(mtbuffer, record.meta.start); retmsg == nil {
                             // 更新已迁移的索引信息，随后不用处理旧有位置的元数据内容，更新索引成功之后旧有位置将被标识为碎片
                             if retmsg = table.saveIndexByRecord(record); retmsg == nil {
                                 // 元数据迁移成功之后再将碎片空间往后挪

@@ -106,9 +106,9 @@ func (db *DB) newTable(name string) (*Table, error) {
     }
 
     // 创建文件指针池
-    table.ixfp = gfilepool.New(ixpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
-    table.mtfp = gfilepool.New(mtpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
-    table.dbfp = gfilepool.New(dbpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT)
+    table.ixfp = gfilepool.New(ixpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT, gDEFAULT_FILEPOOL_EXPIRE)
+    table.mtfp = gfilepool.New(mtpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT, gDEFAULT_FILEPOOL_EXPIRE)
+    table.dbfp = gfilepool.New(dbpath, os.O_RDWR|os.O_CREATE, gFILE_POOL_CACHE_TIMEOUT, gDEFAULT_FILEPOOL_EXPIRE)
 
     // 数据表缓存对象
     table.cache = gcache.New()
@@ -239,7 +239,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
         if table.mtsp.Contains(mtindex, mtsize) {
             continue
         }
-        if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), int64(mtindex), int64(mtindex + mtsize)); mtbuffer != nil {
+        if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File, int64(mtindex), int64(mtindex + mtsize)); mtbuffer != nil {
             for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
                 if table.mtsp.Contains(int(mtindex) + i, gMETA_ITEM_SIZE) {
                     continue
@@ -251,7 +251,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
                 if klen > 0 && vlen > 0 {
                     dbstart := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
                     dbend   := dbstart + int64(klen + vlen)
-                    data    := gfile.GetBinContentByTwoOffsets(dbpf.File(), dbstart, dbend)
+                    data    := gfile.GetBinContentByTwoOffsets(dbpf.File, dbstart, dbend)
                     keyb    := data[1 : 1 + klen]
                     key     := string(keyb)
                     // 内存表数据优先，并且保证内存表中已删除的数据不会被遍历出来
@@ -279,7 +279,7 @@ func (table *Table) getIndexInfoByRecord(record *_Record) error {
     record.index.start = int64(record.hash64%gDEFAULT_PART_SIZE)*gINDEX_BUCKET_SIZE
     record.index.end   = record.index.start + gINDEX_BUCKET_SIZE
     for {
-        if buffer := gfile.GetBinContentByTwoOffsets(pf.File(), record.index.start, record.index.end); buffer != nil {
+        if buffer := gfile.GetBinContentByTwoOffsets(pf.File, record.index.start, record.index.end); buffer != nil {
             bits     := gbinary.DecodeBytesToBits(buffer)
             start    := int64(gbinary.DecodeBits(bits[0 : 36]))
             rehashed := uint(gbinary.DecodeBits(bits[55 : 56]))
@@ -311,7 +311,7 @@ func (table *Table) getDataInfoByRecord(record *_Record) error {
     }
     defer pf.Close()
 
-    if record.meta.buffer = gfile.GetBinContentByTwoOffsets(pf.File(), record.meta.start, record.meta.end); record.meta.buffer != nil {
+    if record.meta.buffer = gfile.GetBinContentByTwoOffsets(pf.File, record.meta.start, record.meta.end); record.meta.buffer != nil {
         // 二分查找
         min := 0
         max := len(record.meta.buffer)/gMETA_ITEM_SIZE - 1
@@ -407,7 +407,7 @@ func (table *Table) getDataByOffset(start, end int64) []byte {
             return nil
         }
         defer pf.Close()
-        buffer := gfile.GetBinContentByTwoOffsets(pf.File(), start, end)
+        buffer := gfile.GetBinContentByTwoOffsets(pf.File, start, end)
         if buffer != nil {
             return buffer
         }
@@ -541,7 +541,7 @@ func (table *Table) saveDataByRecord(record *_Record) error {
     for i := 0; i < int(record.data.cap - record.data.size); i++ {
         buffer = append(buffer, byte(0))
     }
-    if _, err = pf.File().WriteAt(buffer, record.data.start); err != nil {
+    if _, err = pf.WriteAt(buffer, record.data.start); err != nil {
         return err
     }
 
@@ -583,7 +583,7 @@ func (table *Table) saveMetaByRecord(record *_Record) error {
         buffer = append(buffer, byte(0))
     }
 
-    if _, err = pf.File().WriteAt(buffer, record.meta.start); err != nil {
+    if _, err = pf.WriteAt(buffer, record.meta.start); err != nil {
         return err
     }
 
@@ -611,7 +611,7 @@ func (table *Table) saveIndexByRecord(record *_Record) error {
         buffer = make([]byte, gINDEX_BUCKET_SIZE)
     }
 
-    if _, err = ixpf.File().WriteAt(buffer, record.index.start); err != nil {
+    if _, err = ixpf.WriteAt(buffer, record.index.start); err != nil {
         return err
     }
     return nil
@@ -685,7 +685,7 @@ func (table *Table) checkDeepRehash(record *_Record) error {
         return err
     }
     defer mtpf.Close()
-    if _, err = mtpf.File().WriteAt(mtbuffer, mtstart); err != nil {
+    if _, err = mtpf.WriteAt(mtbuffer, mtstart); err != nil {
         return err
     }
 
@@ -695,18 +695,18 @@ func (table *Table) checkDeepRehash(record *_Record) error {
         return err
     }
     defer ixpf.Close()
-    ixstart, err := ixpf.File().Seek(0, 2)
+    ixstart, err := ixpf.Seek(0, 2)
     if err != nil {
         return err
     }
-    ixpf.File().WriteAt(ixbuffer, ixstart)
+    ixpf.WriteAt(ixbuffer, ixstart)
 
     // 修改老的索引信息
     bits := make([]gbinary.Bit, 0)
     bits  = gbinary.EncodeBits(bits, int(ixstart)/gINDEX_BUCKET_SIZE,  36)
     bits  = gbinary.EncodeBits(bits, size,                             19)
     bits  = gbinary.EncodeBits(bits, 1,                                 1)
-    if _, err = ixpf.File().WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
+    if _, err = ixpf.WriteAt(gbinary.EncodeBitsToBytes(bits), record.index.start); err != nil {
         return err
     }
 

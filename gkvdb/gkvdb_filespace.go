@@ -62,7 +62,7 @@ func (table *Table) recountFileSpace() {
                 if mtsize > 0 {
                     mtsp.AddBlock(int(mtindex), getMetaCapBySize(mtsize))
                     // 获取数据列表
-                    if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File(), mtindex, mtindex + int64(mtsize)); mtbuffer != nil {
+                    if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File, mtindex, mtindex + int64(mtsize)); mtbuffer != nil {
                         for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
                             buffer  := mtbuffer[i : i + gMETA_ITEM_SIZE]
                             bits    := gbinary.DecodeBytesToBits(buffer)
@@ -93,7 +93,7 @@ func (table *Table) recountFileSpace() {
 
     // 根据文件使用情况计算文件空白空间，即元数据碎片
     start  := 0
-    end, _ := mtpf.File().Seek(0, 2)
+    end, _ := mtpf.Seek(0, 2)
     for _, v := range usedmtsp.GetAllBlocks() {
         if v.Index() > start {
             table.mtsp.AddBlock(start, v.Index() - start)
@@ -105,7 +105,7 @@ func (table *Table) recountFileSpace() {
     }
     // 根据文件使用情况计算文件空白空间，即数据碎片
     start  = 0
-    end, _ = dbpf.File().Seek(0, 2)
+    end, _ = dbpf.Seek(0, 2)
     for _, v := range useddbsp.GetAllBlocks() {
         if v.Index() > start {
             table.dbsp.AddBlock(start, v.Index() - start)
@@ -155,7 +155,7 @@ func (table *Table) getMtFileSpace(size int) int64 {
         }
         defer pf.Close()
 
-        start, err := pf.File().Seek(0, 2)
+        start, err := pf.Seek(0, 2)
         if err != nil {
             return -1
         }
@@ -185,7 +185,7 @@ func (table *Table) getDbFileSpace(size int) int64 {
         }
         defer pf.Close()
 
-        start, err := pf.File().Seek(0, 2)
+        start, err := pf.Seek(0, 2)
         if err != nil || (start + int64(size)) > gMAX_DATA_FILE_SIZE {
             return -1
         }
