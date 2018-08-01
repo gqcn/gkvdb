@@ -250,7 +250,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
                 vlen   := int(gbinary.DecodeBits(bits[72 : 96]))
                 if klen > 0 && vlen > 0 {
                     dbstart := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
-                    dbend   := dbstart + int64(klen + vlen)
+                    dbend   := dbstart + int64(klen + vlen) + 1
                     data    := gfile.GetBinContentByTwoOffsets(dbpf.File, dbstart, dbend)
                     keyb    := data[1 : 1 + klen]
                     key     := string(keyb)
