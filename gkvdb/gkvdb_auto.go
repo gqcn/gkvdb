@@ -6,8 +6,8 @@ import (
     "errors"
     "gitee.com/johng/gf/g/os/glog"
     "gitee.com/johng/gf/g/os/gfile"
-    "gitee.com/johng/gf/g/os/gcache"
     "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/os/gmlock"
 )
 
 // 数据文件自动整理
@@ -45,10 +45,10 @@ func (db *DB) startAutoSyncingLoop() {
 // 数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
 func (table *Table) autoCompactingData() error {
     key := "auto_compacting_data_cache_key_for_" + table.db.path + table.name
-    if !gcache.Lock(key, 10000) {
+    if !gmlock.TryLock(key, 10000) {
         return nil
     }
-    defer gcache.Unlock(key)
+    defer gmlock.Unlock(key)
 
     table.mu.Lock()
     defer table.mu.Unlock()
@@ -127,10 +127,10 @@ func (table *Table) autoCompactingData() error {
 // 元数据，将最大的空闲块依次往后挪，直到文件末尾，然后truncate文件
 func (table *Table) autoCompactingMeta() error {
     key := "auto_compacting_meta_cache_key_for_" + table.db.path + table.name
-    if !gcache.Lock(key, 10000) {
+    if !gmlock.TryLock(key, 10000) {
         return nil
     }
-    defer gcache.Unlock(key)
+    defer gmlock.Unlock(key)
 
     table.mu.Lock()
     defer table.mu.Unlock()
