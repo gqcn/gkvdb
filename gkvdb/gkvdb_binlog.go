@@ -11,7 +11,6 @@ import (
     "gitee.com/johng/gf/g/os/glog"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/grpool"
-    "gitee.com/johng/gf/g/os/gfilepool"
     "gitee.com/johng/gf/g/container/glist"
     "gitee.com/johng/gf/g/encoding/gbinary"
 )
@@ -21,7 +20,6 @@ type BinLog struct {
     sync.RWMutex                     // binlog文件互斥锁
     smu             sync.RWMutex     // binlog同步互斥锁
     db              *DB              // 所属数据库
-    fp              *gfilepool.Pool  // 文件指针池
     queue           *glist.List      // 同步打包数据队列
     queuesize       int32            // 队列大小限制(byte)，注意不是binlog文件大小，是未同步的队列数据大小
     syncEvents      chan struct{}    // 数据同步通知事件
@@ -49,13 +47,11 @@ func newBinLog(db *DB) (*BinLog, error) {
     if gfile.Exists(path) && (!gfile.IsWritable(path) || !gfile.IsReadable(path)){
         return nil, errors.New("permission denied to binlog file: " + path)
     }
-    binlog.fp = gfilepool.New(path, os.O_RDWR|os.O_CREATE, 0755, gFILE_POOL_CACHE_TIMEOUT)
     return binlog, nil
 }
 
 // 关闭binlog
 func (binlog *BinLog) close() {
-    binlog.fp.Close()
     binlog.closeEvents <- struct{}{}
 }
 
@@ -161,7 +157,7 @@ func (binlog *BinLog) writeByTx(tx *Transaction, sync...bool) error {
     copy(buffer[1:], gbinary.EncodeInt32(int32(blsize)))
 
     // 从指针池获取
-    blpf, err := binlog.fp.File()
+    blpf, err := binlog.db.getBinlogFilePointer()
     if err != nil {
         return err
     }
@@ -209,7 +205,7 @@ func (binlog *BinLog) writeByTx(tx *Transaction, sync...bool) error {
 
 // 写入磁盘，标识事务已经同步，在对应位置只写入1个字节
 func (binlog *BinLog) markSynced(start int64) error {
-    blpf, err := binlog.fp.File()
+    blpf, err := binlog.db.getBinlogFilePointer()
     if err != nil {
         return err
     }

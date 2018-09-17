@@ -24,10 +24,10 @@ func (table *Table) initFileSpace() {
 func (table *Table) recountFileSpace() {
     defer table.mu.Unlock()
 
-    mtpf, _ := table.mtfp.File()
+    mtpf, _ := table.getMetaFilePointer()
     defer mtpf.Close()
 
-    dbpf, _ := table.dbfp.File()
+    dbpf, _ := table.getDataFilePointer()
     defer dbpf.Close()
 
     usedmtsp := gfilespace.New()
@@ -62,7 +62,7 @@ func (table *Table) recountFileSpace() {
                 if mtsize > 0 {
                     mtsp.AddBlock(int(mtindex), getMetaCapBySize(mtsize))
                     // 获取数据列表
-                    if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File, mtindex, mtindex + int64(mtsize)); mtbuffer != nil {
+                    if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf, mtindex, mtindex + int64(mtsize)); mtbuffer != nil {
                         for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
                             buffer  := mtbuffer[i : i + gMETA_ITEM_SIZE]
                             bits    := gbinary.DecodeBytesToBits(buffer)
@@ -149,7 +149,7 @@ func (table *Table) getMtFileSpace(size int) int64 {
         }
         return int64(i)
     } else {
-        pf, err := table.mtfp.File()
+        pf, err := table.getMetaFilePointer()
         if err != nil {
             return -1
         }
@@ -179,7 +179,7 @@ func (table *Table) getDbFileSpace(size int) int64 {
         }
         return int64(i)
     } else {
-        pf, err := table.dbfp.File()
+        pf, err := table.getDataFilePointer()
         if err != nil {
             return -1
         }

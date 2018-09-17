@@ -7,7 +7,6 @@ import (
     "errors"
     "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gf/g/os/gcache"
-    "gitee.com/johng/gf/g/os/gfilepool"
     "gitee.com/johng/gf/g/encoding/gbinary"
     "gitee.com/johng/gf/g/container/gtype"
     "gitee.com/johng/gkvdb/gkvdb/gfilespace"
@@ -18,10 +17,6 @@ type Table struct {
     mu     sync.RWMutex      // 并发互斥锁
     db     *DB               // 所属数据库
     name   string            // 数据表表名
-
-    ixfp   *gfilepool.Pool   // 索引文件打开指针池(用以高并发下的IO复用)
-    mtfp   *gfilepool.Pool   // 元数据文件打开指针池(元数据，包含索引信息和部分数据信息)
-    dbfp   *gfilepool.Pool   // 数据文件打开指针池
 
     mtsp   *gfilespace.Space // 元数据文件碎片管理
     dbsp   *gfilespace.Space // 数据文件碎片管理器
@@ -105,11 +100,6 @@ func (db *DB) newTable(name string) (*Table, error) {
         return nil, errors.New("permission denied to data file: " + dbpath)
     }
 
-    // 创建文件指针池
-    table.ixfp = gfilepool.New(ixpath, os.O_RDWR|os.O_CREATE, 0755, gFILE_POOL_CACHE_TIMEOUT)
-    table.mtfp = gfilepool.New(mtpath, os.O_RDWR|os.O_CREATE, 0755, gFILE_POOL_CACHE_TIMEOUT)
-    table.dbfp = gfilepool.New(dbpath, os.O_RDWR|os.O_CREATE, 0755, gFILE_POOL_CACHE_TIMEOUT)
-
     // 数据表缓存对象
     table.cache = gcache.New()
 
@@ -128,9 +118,6 @@ func (db *DB) newTable(name string) (*Table, error) {
 
 // 关闭数据库链接，释放资源
 func (table *Table) Close() {
-    table.ixfp.Close()
-    table.mtfp.Close()
-    table.dbfp.Close()
     table.closed.Set(true)
 }
 
@@ -147,6 +134,21 @@ func (table *Table) getMetaFilePath() string {
 // 数据文件
 func (table *Table) getDataFilePath() string {
     return table.db.path + gfile.Separator + table.name + ".db"
+}
+
+// 获得索引文件打开指针
+func (table *Table) getIndexFilePointer() (*os.File, error) {
+    return os.OpenFile(table.getIndexFilePath(), os.O_RDWR|os.O_CREATE, 0755)
+}
+
+// 获得元数据文件打开指针
+func (table *Table) getMetaFilePointer() (*os.File, error) {
+    return os.OpenFile(table.getMetaFilePath(), os.O_RDWR|os.O_CREATE, 0755)
+}
+
+// 获得索引文件打开指针
+func (table *Table) getDataFilePointer() (*os.File, error) {
+    return os.OpenFile(table.getDataFilePath(), os.O_RDWR|os.O_CREATE, 0755)
 }
 
 // 磁盘查询
@@ -215,13 +217,13 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
     table.mu.RLock()
     defer table.mu.RUnlock()
 
-    mtpf, err := table.mtfp.File()
+    mtpf, err := table.getMetaFilePointer()
     if err != nil {
         return nil
     }
     defer mtpf.Close()
 
-    dbpf, err := table.dbfp.File()
+    dbpf, err := table.getDataFilePointer()
     if err != nil {
         return nil
     }
@@ -239,7 +241,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
         if table.mtsp.Contains(mtindex, mtsize) {
             continue
         }
-        if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf.File, int64(mtindex), int64(mtindex + mtsize)); mtbuffer != nil {
+        if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf, int64(mtindex), int64(mtindex + mtsize)); mtbuffer != nil {
             for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
                 if table.mtsp.Contains(int(mtindex) + i, gMETA_ITEM_SIZE) {
                     continue
@@ -251,7 +253,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
                 if klen > 0 && vlen > 0 {
                     dbstart := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
                     dbend   := dbstart + int64(klen + vlen) + 1
-                    data    := gfile.GetBinContentByTwoOffsets(dbpf.File, dbstart, dbend)
+                    data    := gfile.GetBinContentByTwoOffsets(dbpf, dbstart, dbend)
                     keyb    := data[1 : 1 + klen]
                     key     := string(keyb)
                     // 内存表数据优先，并且保证内存表中已删除的数据不会被遍历出来
@@ -270,7 +272,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
 
 // 获得索引信息，这里涉及到重复分区时索引的深度查找
 func (table *Table) getIndexInfoByRecord(record *_Record) error {
-    pf, err := table.ixfp.File()
+    pf, err := table.getIndexFilePointer()
     if err != nil {
         return err
     }
@@ -279,7 +281,7 @@ func (table *Table) getIndexInfoByRecord(record *_Record) error {
     record.index.start = int64(record.hash64%gDEFAULT_PART_SIZE)*gINDEX_BUCKET_SIZE
     record.index.end   = record.index.start + gINDEX_BUCKET_SIZE
     for {
-        if buffer := gfile.GetBinContentByTwoOffsets(pf.File, record.index.start, record.index.end); buffer != nil {
+        if buffer := gfile.GetBinContentByTwoOffsets(pf, record.index.start, record.index.end); buffer != nil {
             bits     := gbinary.DecodeBytesToBits(buffer)
             start    := int64(gbinary.DecodeBits(bits[0 : 36]))
             rehashed := uint(gbinary.DecodeBits(bits[55 : 56]))
@@ -305,13 +307,13 @@ func (table *Table) getIndexInfoByRecord(record *_Record) error {
 
 // 获得元数据信息，对比hash64和关键字长度
 func (table *Table) getDataInfoByRecord(record *_Record) error {
-    pf, err := table.mtfp.File()
+    pf, err := table.getMetaFilePointer()
     if err != nil {
         return err
     }
     defer pf.Close()
 
-    if record.meta.buffer = gfile.GetBinContentByTwoOffsets(pf.File, record.meta.start, record.meta.end); record.meta.buffer != nil {
+    if record.meta.buffer = gfile.GetBinContentByTwoOffsets(pf, record.meta.start, record.meta.end); record.meta.buffer != nil {
         // 二分查找
         min := 0
         max := len(record.meta.buffer)/gMETA_ITEM_SIZE - 1
@@ -402,12 +404,12 @@ func (table *Table) getRecordByKey(key []byte) (*_Record, error) {
 // 查询数据信息键值
 func (table *Table) getDataByOffset(start, end int64) []byte {
     if end > 0 {
-        pf, err := table.dbfp.File()
+        pf, err := table.getDataFilePointer()
         if err != nil {
             return nil
         }
         defer pf.Close()
-        buffer := gfile.GetBinContentByTwoOffsets(pf.File, start, end)
+        buffer := gfile.GetBinContentByTwoOffsets(pf, start, end)
         if buffer != nil {
             return buffer
         }
@@ -523,7 +525,7 @@ func (table *Table) removeMeta(slice []byte, index int) []byte {
 
 // 将数据写入到数据文件中，并更新信息到record
 func (table *Table) saveDataByRecord(record *_Record) error {
-    pf, err := table.dbfp.File()
+    pf, err := table.getDataFilePointer()
     if err != nil {
         return err
     }
@@ -551,7 +553,7 @@ func (table *Table) saveDataByRecord(record *_Record) error {
 // 将数据写入到元数据文件中，并更新信息到record
 // 写入|删除
 func (table *Table) saveMetaByRecord(record *_Record) error {
-    pf, err := table.mtfp.File()
+    pf, err := table.getMetaFilePointer()
     if err != nil {
         return err
     }
@@ -592,7 +594,7 @@ func (table *Table) saveMetaByRecord(record *_Record) error {
 
 // 根据record更新索引信息
 func (table *Table) saveIndexByRecord(record *_Record) error {
-    ixpf, err := table.ixfp.File()
+    ixpf, err := table.getIndexFilePointer()
     if err != nil {
         return err
     }
@@ -680,7 +682,7 @@ func (table *Table) checkDeepRehash(record *_Record) error {
     }
 
     // 写入重新分区后的元数据信息
-    mtpf, err := table.mtfp.File()
+    mtpf, err := table.getMetaFilePointer()
     if err != nil {
         return err
     }
@@ -690,7 +692,7 @@ func (table *Table) checkDeepRehash(record *_Record) error {
     }
 
     // 写入重新分区后的索引信息，需要写到末尾
-    ixpf, err := table.ixfp.File()
+    ixpf, err := table.getIndexFilePointer()
     if err != nil {
         return err
     }

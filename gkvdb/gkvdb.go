@@ -27,6 +27,7 @@ import (
     "gitee.com/johng/gf/g/encoding/ghash"
     "gitee.com/johng/gf/g/container/gmap"
     "gitee.com/johng/gf/g/container/gtype"
+    "os"
 )
 
 const (
@@ -86,11 +87,16 @@ func (db *DB) getBinLogFilePath() string {
     return db.path + gfile.Separator + "binlog"
 }
 
+// 获得binlog文件打开指针
+func (db *DB) getBinlogFilePointer() (*os.File, error) {
+    return os.OpenFile(db.getBinLogFilePath(), os.O_RDWR|os.O_CREATE, 0755)
+}
+
 // 关闭数据库链接，释放资源
 func (db *DB) Close() {
     // 关闭数据库所有的表
     m := db.tables.Clone()
-    for k, v := range *m {
+    for k, v := range m {
         table := v.(*Table)
         table.Close()
         db.tables.Remove(k)
