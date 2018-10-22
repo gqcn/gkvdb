@@ -241,7 +241,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
         if table.mtsp.Contains(mtindex, mtsize) {
             continue
         }
-        if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf, int64(mtindex), int64(mtindex + mtsize)); mtbuffer != nil {
+        if mtbuffer := gfile.GetBinContentsByTwoOffsets(mtpf, int64(mtindex), int64(mtindex + mtsize)); mtbuffer != nil {
             for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
                 if table.mtsp.Contains(int(mtindex) + i, gMETA_ITEM_SIZE) {
                     continue
@@ -253,7 +253,7 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
                 if klen > 0 && vlen > 0 {
                     dbstart := int64(gbinary.DecodeBits(bits[96 : 136]))*gDATA_BUCKET_SIZE
                     dbend   := dbstart + int64(klen + vlen) + 1
-                    data    := gfile.GetBinContentByTwoOffsets(dbpf, dbstart, dbend)
+                    data    := gfile.GetBinContentsByTwoOffsets(dbpf, dbstart, dbend)
                     keyb    := data[1 : 1 + klen]
                     key     := string(keyb)
                     // 内存表数据优先，并且保证内存表中已删除的数据不会被遍历出来
@@ -281,7 +281,7 @@ func (table *Table) getIndexInfoByRecord(record *_Record) error {
     record.index.start = int64(record.hash64%gDEFAULT_PART_SIZE)*gINDEX_BUCKET_SIZE
     record.index.end   = record.index.start + gINDEX_BUCKET_SIZE
     for {
-        if buffer := gfile.GetBinContentByTwoOffsets(pf, record.index.start, record.index.end); buffer != nil {
+        if buffer := gfile.GetBinContentsByTwoOffsets(pf, record.index.start, record.index.end); buffer != nil {
             bits     := gbinary.DecodeBytesToBits(buffer)
             start    := int64(gbinary.DecodeBits(bits[0 : 36]))
             rehashed := uint(gbinary.DecodeBits(bits[55 : 56]))
@@ -313,7 +313,7 @@ func (table *Table) getDataInfoByRecord(record *_Record) error {
     }
     defer pf.Close()
 
-    if record.meta.buffer = gfile.GetBinContentByTwoOffsets(pf, record.meta.start, record.meta.end); record.meta.buffer != nil {
+    if record.meta.buffer = gfile.GetBinContentsByTwoOffsets(pf, record.meta.start, record.meta.end); record.meta.buffer != nil {
         // 二分查找
         min := 0
         max := len(record.meta.buffer)/gMETA_ITEM_SIZE - 1
@@ -409,7 +409,7 @@ func (table *Table) getDataByOffset(start, end int64) []byte {
             return nil
         }
         defer pf.Close()
-        buffer := gfile.GetBinContentByTwoOffsets(pf, start, end)
+        buffer := gfile.GetBinContentsByTwoOffsets(pf, start, end)
         if buffer != nil {
             return buffer
         }

@@ -62,7 +62,7 @@ func (table *Table) recountFileSpace() {
                 if mtsize > 0 {
                     mtsp.AddBlock(int(mtindex), getMetaCapBySize(mtsize))
                     // 获取数据列表
-                    if mtbuffer := gfile.GetBinContentByTwoOffsets(mtpf, mtindex, mtindex + int64(mtsize)); mtbuffer != nil {
+                    if mtbuffer := gfile.GetBinContentsByTwoOffsets(mtpf, mtindex, mtindex + int64(mtsize)); mtbuffer != nil {
                         for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
                             buffer  := mtbuffer[i : i + gMETA_ITEM_SIZE]
                             bits    := gbinary.DecodeBytesToBits(buffer)
