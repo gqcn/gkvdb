@@ -1,18 +1,17 @@
 package gkvdb
 
 import (
-    "os"
-    "math"
-    "sync"
-    "time"
     "bytes"
     "errors"
-    "sync/atomic"
-    "gitee.com/johng/gf/g/os/glog"
-    "gitee.com/johng/gf/g/os/gfile"
-    "gitee.com/johng/gf/g/os/grpool"
     "gitee.com/johng/gf/g/container/glist"
     "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/os/gfile"
+    "gitee.com/johng/gf/g/os/glog"
+    "math"
+    "os"
+    "sync"
+    "sync/atomic"
+    "time"
 )
 
 // binlog操作对象
@@ -31,7 +30,7 @@ type BinLog struct {
 type BinLogItem struct {
     size    int32                        // 数据项大小(byte)
     txstart int64                        // 事务在binlog文件的开始位置
-    datamap map[string]map[string][]byte // 事务数据
+    datamap map[string]map[string][]byte // 事务数据(可能有多个)
 }
 
 // 创建binlog对象
@@ -242,7 +241,7 @@ func (binlog *BinLog) sync() {
                 // 不同的数据表异步执行数据保存
                 name := n
                 data := m
-                grpool.Add(func() {
+                go func() {
                     defer wg.Done()
                     // 获取数据表对象
                     table, err := binlog.db.Table(name)
@@ -253,12 +252,14 @@ func (binlog *BinLog) sync() {
                     }
                     for k, v := range data {
                         if len(v) == 0 {
+                            // 删除操作
                             if err := table.remove([]byte(k)); err != nil {
                                 atomic.StoreInt32(&done, -1)
                                 glog.Error(err)
                                 return
                             }
                         } else {
+                            // 写入操作(新增/修改)
                             if err := table.set([]byte(k), v); err != nil {
                                 atomic.StoreInt32(&done, -1)
                                 glog.Error(err)
@@ -266,7 +267,7 @@ func (binlog *BinLog) sync() {
                             }
                         }
                     }
-                })
+                }()
             }
             wg.Wait()
             // 同步失败，重新推入队列

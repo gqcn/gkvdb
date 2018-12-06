@@ -1,15 +1,15 @@
 package gkvdb
 
 import (
-    "os"
-    "sync"
     "bytes"
     "errors"
-    "gitee.com/johng/gf/g/os/gfile"
-    "gitee.com/johng/gf/g/os/gcache"
-    "gitee.com/johng/gf/g/encoding/gbinary"
     "gitee.com/johng/gf/g/container/gtype"
+    "gitee.com/johng/gf/g/encoding/gbinary"
+    "gitee.com/johng/gf/g/os/gcache"
+    "gitee.com/johng/gf/g/os/gfile"
     "gitee.com/johng/gkvdb/gkvdb/gfilespace"
+    "os"
+    "sync"
 )
 
 // 数据表
@@ -237,11 +237,11 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
         }
         mtindex := int(gbinary.DecodeBits(bits[ 0 : 36]))*gMETA_BUCKET_SIZE
         mtsize  := int(gbinary.DecodeBits(bits[36 : 55]))*gMETA_ITEM_SIZE
-        // 如果元数据包含在碎片中，那么忽略
-        if table.mtsp.Contains(mtindex, mtsize) {
+        // 如果不存在元数据，或者元数据包含在碎片中，那么忽略
+        if mtsize == 0 || table.mtsp.Contains(mtindex, mtsize) {
             continue
         }
-        if mtbuffer := gfile.GetBinContentsByTwoOffsets(mtpf, int64(mtindex), int64(mtindex + mtsize)); mtbuffer != nil {
+        if mtbuffer := gfile.GetBinContentsByTwoOffsets(mtpf, int64(mtindex), int64(mtindex + mtsize)); len(mtbuffer) > 0 {
             for i := 0; i < len(mtbuffer); i += gMETA_ITEM_SIZE {
                 if table.mtsp.Contains(int(mtindex) + i, gMETA_ITEM_SIZE) {
                     continue
@@ -256,17 +256,15 @@ func (table *Table) items(max int, m map[string][]byte) map[string][]byte {
                     data    := gfile.GetBinContentsByTwoOffsets(dbpf, dbstart, dbend)
                     keyb    := data[1 : 1 + klen]
                     key     := string(keyb)
-                    // 内存表数据优先，并且保证内存表中已删除的数据不会被遍历出来
-                    if _, ok := table.memt.get(keyb); !ok {
-                        m[key] = data[1 + klen : ]
-                        if len(m) == max {
-                            return m
-                        }
+                    m[key]   = data[1 + klen : ]
+                    if len(m) == max {
+                        return m
                     }
                 }
             }
         }
     }
+
     return m
 }
 
