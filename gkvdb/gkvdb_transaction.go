@@ -67,8 +67,10 @@ func (tx *Transaction) SetTo(key, value []byte, name string) error {
     }
     if value != nil {
         tx.tables[name][string(key)] = make([]byte, len(value))
+        copy(tx.tables[name][string(key)], value)
+    } else {
+        tx.tables[name][string(key)] = nil
     }
-    copy(tx.tables[name][string(key)], value)
     return nil
 }
 
