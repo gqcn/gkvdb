@@ -9,7 +9,7 @@ package gfilespace
 
 import (
     "gitee.com/johng/gkvdb/gkvdb/gbtree"
-    "gitee.com/johng/gf/g/encoding/gbinary"
+    "github.com/gogf/gf/g/encoding/gbinary"
 )
 
 // 添加空闲空间到管理器

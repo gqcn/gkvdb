@@ -3,8 +3,8 @@ package gkvdb
 import (
     "fmt"
     "sync"
-    "gitee.com/johng/gf/g/os/gfile"
-    "gitee.com/johng/gf/g/encoding/gbinary"
+    "github.com/gogf/gf/g/os/gfile"
+    "github.com/gogf/gf/g/encoding/gbinary"
     "gitee.com/johng/gkvdb/gkvdb/gfilespace"
 )
 

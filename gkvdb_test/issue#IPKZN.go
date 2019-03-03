@@ -3,7 +3,7 @@ package main
 import (
     "encoding/binary"
     "fmt"
-    "gitee.com/johng/gf/g/os/gfile"
+    "github.com/gogf/gf/g/os/gfile"
     "gitee.com/johng/gkvdb/gkvdb"
 )
 

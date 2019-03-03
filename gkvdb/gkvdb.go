@@ -23,10 +23,10 @@ import (
     "sync"
     "strconv"
     "errors"
-    "gitee.com/johng/gf/g/os/gfile"
-    "gitee.com/johng/gf/g/encoding/ghash"
-    "gitee.com/johng/gf/g/container/gmap"
-    "gitee.com/johng/gf/g/container/gtype"
+    "github.com/gogf/gf/g/os/gfile"
+    "github.com/gogf/gf/g/encoding/ghash"
+    "github.com/gogf/gf/g/container/gmap"
+    "github.com/gogf/gf/g/container/gtype"
     "os"
 )
 
@@ -95,12 +95,13 @@ func (db *DB) getBinlogFilePointer() (*os.File, error) {
 // 关闭数据库链接，释放资源
 func (db *DB) Close() {
     // 关闭数据库所有的表
-    m := db.tables.Clone()
-    for k, v := range m {
-        table := v.(*Table)
-        table.Close()
-        db.tables.Remove(k)
-    }
+    db.tables.RLockFunc(func(m map[string]interface{}) {
+        for k, v := range m {
+            table := v.(*Table)
+            table.Close()
+            db.tables.Remove(k)
+        }
+    })
     // 关闭binlog
     db.binlog.close()
     // 设置关闭标识，使得异步线程自动关闭

@@ -5,7 +5,7 @@ import (
     "log"
     "strconv"
     "github.com/boltdb/bolt"
-    "gitee.com/johng/gf/g/os/gtime"
+    "github.com/gogf/gf/g/os/gtime"
 )
 
 var db *bolt.DB

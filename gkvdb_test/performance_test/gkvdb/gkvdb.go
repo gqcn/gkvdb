@@ -6,7 +6,7 @@ import (
     "sync"
     "bytes"
     "gitee.com/johng/gkvdb/gkvdb"
-    "gitee.com/johng/gf/g/os/gtime"
+    "github.com/gogf/gf/g/os/gtime"
 )
 
 // 数据库对象指针
